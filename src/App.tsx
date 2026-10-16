@@ -28,6 +28,7 @@ import { PHASES, type Phase } from './shared/phases'
 import { formatRoomCode } from './shared/roomCode'
 import {
   getOrCreateToken,
+  regenerateToken,
   saveSession,
   loadSession,
   clearSession,
@@ -92,15 +93,15 @@ type PopEntry = {
   playerName: string
 }
 
-const TOTAL_ROUNDS = 10
-const DOUBLE_ROUNDS = [3, 6, 9]
+const TOTAL_ROUNDS = 5
+const DOUBLE_ROUNDS = [3]
 const PHASE_DURATION_MS: Record<Phase, number> = {
-  lock: 10_000,
-  peek: 5_000,
-  bluff: 20_000,
-  challenge: 15_000,
-  guess: 45_000,
-  reveal: 10_000,
+  lock: 15_000,
+  peek: 10_000,
+  bluff: 30_000,
+  challenge: 25_000,
+  guess: 50_000,
+  reveal: 15_000,
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -174,7 +175,6 @@ function App() {
   const [reasonInput, setReasonInput] = useState('')
   const [pendingRoomCode, setPendingRoomCode] = useState<string | null>(null)
   const [myRejoinCode, setMyRejoinCode] = useState<string>('')
-  const [stillConnectedTo, setStillConnectedTo] = useState<string | null>(null)
   const [pops, setPops] = useState<PopEntry[]>([])
   const [showIntro, setShowIntro] = useState(false)
   const [shakeTrigger, setShakeTrigger] = useState(0)
@@ -511,7 +511,7 @@ function App() {
     send({
       type: 'PHASE_CHANGE',
       phase,
-      roundLabel: `R${round}/10`,
+      roundLabel: `R${round}/5`,
       deadlineAt,
     })
   }
@@ -544,8 +544,6 @@ function App() {
         nextCodes[player.id] = code
         locked.add(player.id)
         send({ type: 'LOCK_STATUS', playerId: player.id })
-        // If the host had to auto-lock for a connected player, tell only that
-        // player the assigned code so their later peek logic uses the same code.
         sendToPlayer(player.id, { type: 'LOCK_CODE_ASSIGNED', playerId: player.id, code })
       }
       codesByPlayerRef.current = nextCodes
@@ -700,7 +698,7 @@ function App() {
         }
         const phase = event.phase as Phase
         const m = event.roundLabel.match(/^R(\d+)\//)
-        const rn = m ? parseInt(m[1], 10) : roundNumberRef.current
+        const rn = m ? parseInt(m[1], 5) : roundNumberRef.current
         const deadlineAt = event.deadlineAt ?? Date.now() + PHASE_DURATION_MS[phase]
         roundNumberRef.current = rn
         previewPhaseRef.current = phase
@@ -712,497 +710,494 @@ function App() {
         return
       }
 
-    // ---- Reaction ----
+      // ---- Reaction ----
       if (event.type === 'REACTION') {
-      if (selfIdRef.current === 'host') {
-        const mappedId = peerToPlayerRef.current[from]
-        if (from !== 'host' && mappedId !== event.fromId) return
-        const senderIsPlayer = playersRef.current.some((p) => p.id === event.fromId)
-        const senderIsSpectator = spectatorsRef.current.some((p) => p.id === event.fromId)
-        if (senderIsPlayer && activePeerByPlayerRef.current[event.fromId] !== from) return
-        if (!senderIsPlayer && !senderIsSpectator) return
-        send(event)
-      } else if (from !== 'host') {
+        if (selfIdRef.current === 'host') {
+          const mappedId = peerToPlayerRef.current[from]
+          if (from !== 'host' && mappedId !== event.fromId) return
+          const senderIsPlayer = playersRef.current.some((p) => p.id === event.fromId)
+          const senderIsSpectator = spectatorsRef.current.some((p) => p.id === event.fromId)
+          if (senderIsPlayer && activePeerByPlayerRef.current[event.fromId] !== from) return
+          if (!senderIsPlayer && !senderIsSpectator) return
+          send(event)
+        } else if (from !== 'host') {
+          return
+        }
+        const senderName =
+          playersRef.current.find((p) => p.id === event.fromId)?.name ??
+          spectatorsRef.current.find((p) => p.id === event.fromId)?.name ??
+          '???'
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        setReactions((prev) => [
+          ...prev.slice(-19),
+          { id, emoji: event.emoji, fromName: senderName },
+        ])
         return
       }
-      const senderName =
-        playersRef.current.find((p) => p.id === event.fromId)?.name ??
-        spectatorsRef.current.find((p) => p.id === event.fromId)?.name ??
-        '???'
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      setReactions((prev) => [
-        ...prev.slice(-19),
-        { id, emoji: event.emoji, fromName: senderName },
-      ])
-      return
-    }
 
-    if (event.type === 'SPECTATOR_JOIN') {
-      const s = event.spectator
-      if (selfIdRef.current === 'host') {
-        if (s.role !== 'spectator' || !/^spec-[a-z0-9]+$/i.test(s.id)) return
-        if (playersRef.current.some((p) => p.id === s.id)) return
-        const existingPeerPlayer = peerToPlayerRef.current[from]
-        if (existingPeerPlayer && existingPeerPlayer !== s.id) return
-        if (spectatorsRef.current.some((existing) => existing.id === s.id) && existingPeerPlayer !== s.id) return
-        peerToPlayerRef.current[from] = s.id
+      if (event.type === 'SPECTATOR_JOIN') {
+        const s = event.spectator
+        if (selfIdRef.current === 'host') {
+          if (s.role !== 'spectator' || !/^spec-[a-z0-9]+$/i.test(s.id)) return
+          if (playersRef.current.some((p) => p.id === s.id)) return
+          const existingPeerPlayer = peerToPlayerRef.current[from]
+          if (existingPeerPlayer && existingPeerPlayer !== s.id) return
+          if (spectatorsRef.current.some((existing) => existing.id === s.id) && existingPeerPlayer !== s.id) return
+          peerToPlayerRef.current[from] = s.id
+        }
+        const nextSpectators = spectatorsRef.current.some((x) => x.id === s.id)
+          ? spectatorsRef.current
+          : [...spectatorsRef.current, s]
+        spectatorsRef.current = nextSpectators
+        setSpectators(nextSpectators)
+        if (selfId === 'host') {
+          send({
+            type: 'GAME_STATE_SYNC',
+            gameStarted: gameStartedRef.current,
+            phase: previewPhaseRef.current,
+            deadlineAt: phaseDeadlineAtRef.current ?? undefined,
+            roundLabel: `R${roundNumberRef.current}/5`,
+            lockedPlayers: lockedPlayersRef.current,
+            bluffedPlayers: bluffedPlayersRef.current,
+            bluffs: bluffsRef.current,
+            players: playersRef.current,
+            challenges: challengesRef.current,
+            roundNumber: roundNumberRef.current,
+            scores: scoresRef.current,
+            spectators: nextSpectators,
+          })
+        }
+        return
       }
-      const nextSpectators = spectatorsRef.current.some((x) => x.id === s.id)
-        ? spectatorsRef.current
-        : [...spectatorsRef.current, s]
-      spectatorsRef.current = nextSpectators
-      setSpectators(nextSpectators)
-      if (selfId === 'host') {
-        send({
-          type: 'GAME_STATE_SYNC',
-          gameStarted: gameStartedRef.current,
-          phase: previewPhaseRef.current,
-          deadlineAt: phaseDeadlineAtRef.current ?? undefined,
-          roundLabel: `R${roundNumberRef.current}/10`,
-          lockedPlayers: lockedPlayersRef.current,
-          bluffedPlayers: bluffedPlayersRef.current,
-          bluffs: bluffsRef.current,
-          players: playersRef.current,
-          challenges: challengesRef.current,
-          roundNumber: roundNumberRef.current,
-          scores: scoresRef.current,
-          spectators: nextSpectators,
-        })
-      }
-      return
-    }
 
       if (event.type === 'SPECTATOR_LEFT') {
-      if (selfIdRef.current === 'host' && from !== 'host' && peerToPlayerRef.current[from] !== event.spectatorId) return
-      if (selfIdRef.current === 'host' && from !== 'host') delete peerToPlayerRef.current[from]
-      const nextSpectators = spectatorsRef.current.filter((s) => s.id !== event.spectatorId)
-      spectatorsRef.current = nextSpectators
-      setSpectators(nextSpectators)
-      if (selfIdRef.current === 'host') {
-        send({
-          type: 'GAME_STATE_SYNC',
-          gameStarted: gameStartedRef.current,
-          phase: previewPhaseRef.current,
-          deadlineAt: phaseDeadlineAtRef.current ?? undefined,
-          roundLabel: `R${roundNumberRef.current}/10`,
-          lockedPlayers: lockedPlayersRef.current,
-          bluffedPlayers: bluffedPlayersRef.current,
-          bluffs: bluffsRef.current,
-          players: playersRef.current,
-          challenges: challengesRef.current,
-          roundNumber: roundNumberRef.current,
-          scores: scoresRef.current,
-          spectators: nextSpectators,
-        })
-      }
-      return
-    }
-
-    if (event.type === 'LOCK_SUBMITTED') {
-      if (selfIdRef.current !== 'host' || previewPhaseRef.current !== 'lock') return
-      const who = event.playerId
-      const mappedId = peerToPlayerRef.current[from]
-      if (mappedId !== who || activePeerByPlayerRef.current[who] !== from || !playersRef.current.some((p) => p.id === who)) return
-      if (!/^[1-9]{3}$/.test(event.code)) return
-      const previousCode = codesByPlayerRef.current[who]
-      if (lockedPlayersRef.current.includes(who) && previousCode && previousCode !== event.code) return
-      const nextCodes = { ...codesByPlayerRef.current, [who]: event.code }
-      codesByPlayerRef.current = nextCodes
-      setCodesByPlayer(nextCodes)
-      const locked = lockedPlayersRef.current.includes(who)
-        ? lockedPlayersRef.current
-        : [...lockedPlayersRef.current, who]
-      lockedPlayersRef.current = locked
-      setLockedPlayers(locked)
-      send({ type: 'LOCK_STATUS', playerId: who })
-      return
-    }
-
-    if (event.type === 'LOCK_CODE_ASSIGNED') {
-      if (from !== 'host' || event.playerId !== myPlayerIdRef.current || !/^[1-9]{3}$/.test(event.code)) return
-      setMyCode(event.code)
-      return
-    }
-
-    if (event.type === 'LOCK_STATUS') {
-      if (from !== 'host') return
-      const nextLocked = lockedPlayersRef.current.includes(event.playerId)
-        ? lockedPlayersRef.current
-        : [...lockedPlayersRef.current, event.playerId]
-      lockedPlayersRef.current = nextLocked
-      setLockedPlayers(nextLocked)
-      return
-    }
-
-    if (event.type === 'CODES_REVEALED') {
-      if (from !== 'host') return
-      codesByPlayerRef.current = event.codesByPlayer
-      setCodesByPlayer(event.codesByPlayer)
-      return
-    }
-
-    if (event.type === 'BLUFF_SUBMITTED') {
-      if (selfIdRef.current === 'host') {
-        if (previewPhaseRef.current !== 'bluff') return
-        const mappedId = peerToPlayerRef.current[from]
-        if (from !== 'host' && (mappedId !== event.playerId || activePeerByPlayerRef.current[event.playerId] !== from)) return
-        if (!playersRef.current.some((p) => p.id === event.playerId)) return
-        if (bluffedPlayersRef.current.includes(event.playerId)) return
-        send({ ...event, text: event.text.slice(0, 40) })
-      } else if (from !== 'host') {
-        return
-      }
-      const who = event.playerId
-      if (bluffedPlayersRef.current.includes(who)) return
-      const nextBluffs = { ...bluffsRef.current, [who]: event.text.slice(0, 40) }
-      bluffsRef.current = nextBluffs
-      setBluffs(nextBluffs)
-      const bluffed = bluffedPlayersRef.current.includes(who)
-        ? bluffedPlayersRef.current
-        : [...bluffedPlayersRef.current, who]
-      bluffedPlayersRef.current = bluffed
-      setBluffedPlayers(bluffed)
-      return
-    }
-
-    if (event.type === 'CHALLENGE_SUBMITTED') {
-      if (selfIdRef.current === 'host') {
-        if (previewPhaseRef.current !== 'challenge') return
-        const mappedId = peerToPlayerRef.current[from]
-        if (from !== 'host' && (mappedId !== event.challengerId || activePeerByPlayerRef.current[event.challengerId] !== from)) return
-        if (event.challengerId === event.targetId) return
-        if (!playersRef.current.some((p) => p.id === event.challengerId) || !playersRef.current.some((p) => p.id === event.targetId)) return
-        if (Object.prototype.hasOwnProperty.call(challengesRef.current, event.challengerId)) return
-        send(event)
-      } else if (from !== 'host') {
-        return
-      }
-      if (Object.prototype.hasOwnProperty.call(challengesRef.current, event.challengerId)) return
-      const nextChallenges = { ...challengesRef.current, [event.challengerId]: event.targetId }
-      challengesRef.current = nextChallenges
-      setChallenges(nextChallenges)
-      return
-    }
-
-    if (event.type === 'GUESS_SUBMITTED') {
-      if (selfIdRef.current !== 'host' || previewPhaseRef.current !== 'guess') return
-      const mappedId = peerToPlayerRef.current[from]
-      if (from !== 'host' && (mappedId !== event.guesserId || activePeerByPlayerRef.current[event.guesserId] !== from)) return
-      if (!event.guessId || !/^[1-9]{3}$/.test(event.code)) return
-      if (event.guesserId === event.targetId) return
-      if (!playersRef.current.some((p) => p.id === event.guesserId) || !playersRef.current.some((p) => p.id === event.targetId)) return
-      const list = guessesRef.current[event.guesserId] ?? []
-      if (list.some((g) => g.guessId === event.guessId) || list.length >= 3) return
-      const secret = codesByPlayerRef.current[event.targetId]
-      if (!secret) return
-      const result = scoreGuess(event.code, secret)
-      const resolved = {
-        guessId: event.guessId,
-        guesserId: event.guesserId,
-        targetId: event.targetId,
-        code: event.code,
-        result,
-      }
-      const targetName = playersRef.current.find((p) => p.id === event.targetId)?.name ?? '???'
-      const nextList = [...list, { guessId: event.guessId, targetId: event.targetId, targetName, code: event.code, result }]
-      guessesRef.current = { ...guessesRef.current, [event.guesserId]: nextList }
-      setGuesses(guessesRef.current)
-      send({ type: 'GUESS_RESOLVED', ...resolved })
-      return
-    }
-
-    if (event.type === 'GUESS_RESOLVED') {
-      if (from !== 'host') return
-      const targetName = playersRef.current.find((p) => p.id === event.targetId)?.name ?? '???'
-      const list = guessesRef.current[event.guesserId] ?? []
-      const replacement: MyGuess = { guessId: event.guessId, targetId: event.targetId, targetName, code: event.code, result: event.result }
-      const index = list.findIndex((g) => g.guessId === event.guessId)
-      const nextList = index >= 0 ? list.map((g, i) => i === index ? replacement : g) : [...list, replacement]
-      const next = { ...guessesRef.current, [event.guesserId]: nextList }
-      guessesRef.current = next
-      setGuesses(next)
-      if (event.guesserId === myPlayerIdRef.current) {
-        if (event.result.correctPosition === 3) play('correct')
-        else if (event.result.points > 0) play('select')
-        else play('wrong')
-      }
-      return
-    }
-
-    if (event.type === 'ROUND_COMPLETE') {
-      if (from !== 'host') return
-      setScores(event.scores)
-      scoresRef.current = event.scores
-      setRoundDeltas(event.deltas)
-      setChallengeResults(event.challengeResults)
-      return
-    }
-
-    if (event.type === 'PEEK_SHARED') {
-      if (selfIdRef.current === 'host') {
-        const mappedId = peerToPlayerRef.current[from]
-        if (from !== 'host' && (mappedId !== event.from || activePeerByPlayerRef.current[event.from] !== from)) return
-        if (event.to === 'host') {
-          const sender = playersRef.current.find((p) => p.id === event.from)
-          setMyPeek({ fromPlayerId: event.from, fromPlayerName: sender?.name ?? '???', digitIndex: event.digitIndex, digit: event.digit })
-        } else {
-          sendToPlayer(event.to, event)
+        if (selfIdRef.current === 'host' && from !== 'host' && peerToPlayerRef.current[from] !== event.spectatorId) return
+        if (selfIdRef.current === 'host' && from !== 'host') delete peerToPlayerRef.current[from]
+        const nextSpectators = spectatorsRef.current.filter((s) => s.id !== event.spectatorId)
+        spectatorsRef.current = nextSpectators
+        setSpectators(nextSpectators)
+        if (selfIdRef.current === 'host') {
+          send({
+            type: 'GAME_STATE_SYNC',
+            gameStarted: gameStartedRef.current,
+            phase: previewPhaseRef.current,
+            deadlineAt: phaseDeadlineAtRef.current ?? undefined,
+            roundLabel: `R${roundNumberRef.current}/5`,
+            lockedPlayers: lockedPlayersRef.current,
+            bluffedPlayers: bluffedPlayersRef.current,
+            bluffs: bluffsRef.current,
+            players: playersRef.current,
+            challenges: challengesRef.current,
+            roundNumber: roundNumberRef.current,
+            scores: scoresRef.current,
+            spectators: nextSpectators,
+          })
         }
         return
       }
-      if (from !== 'host' || event.to !== myPlayerIdRef.current) return
-      const sender = playersRef.current.find((p) => p.id === event.from)
-      setMyPeek({
-        fromPlayerId: event.from,
-        fromPlayerName: sender?.name ?? '???',
-        digitIndex: event.digitIndex,
-        digit: event.digit,
-      })
-      return
-    }
 
-    if (event.type === 'GAME_STATE_SYNC') {
-      setGameStarted(event.gameStarted)
-      gameStartedRef.current = event.gameStarted
-      setPreviewPhase(event.phase as Phase)
-      previewPhaseRef.current = event.phase as Phase
-      setPhaseDeadlineAt(event.deadlineAt ?? null)
-      phaseDeadlineAtRef.current = event.deadlineAt ?? null
-      setLockedPlayers(event.lockedPlayers)
-      lockedPlayersRef.current = event.lockedPlayers
-      setBluffedPlayers(event.bluffedPlayers)
-      bluffedPlayersRef.current = event.bluffedPlayers
-      setBluffs(event.bluffs)
-      bluffsRef.current = event.bluffs
-      setChallenges(event.challenges ?? {})
-      challengesRef.current = event.challenges ?? {}
-      setRoundNumber(event.roundNumber ?? 1)
-      roundNumberRef.current = event.roundNumber ?? 1
-      setScores(event.scores ?? {})
-      scoresRef.current = event.scores ?? {}
-      if (Array.isArray(event.spectators)) {
-        setSpectators(event.spectators)
-        spectatorsRef.current = event.spectators
+      if (event.type === 'LOCK_SUBMITTED') {
+        if (selfIdRef.current !== 'host' || previewPhaseRef.current !== 'lock') return
+        const who = event.playerId
+        const mappedId = peerToPlayerRef.current[from]
+        if (mappedId !== who || activePeerByPlayerRef.current[who] !== from || !playersRef.current.some((p) => p.id === who)) return
+        if (!/^[1-9]{3}$/.test(event.code)) return
+        const previousCode = codesByPlayerRef.current[who]
+        if (lockedPlayersRef.current.includes(who) && previousCode && previousCode !== event.code) return
+        const nextCodes = { ...codesByPlayerRef.current, [who]: event.code }
+        codesByPlayerRef.current = nextCodes
+        setCodesByPlayer(nextCodes)
+        const locked = lockedPlayersRef.current.includes(who)
+          ? lockedPlayersRef.current
+          : [...lockedPlayersRef.current, who]
+        lockedPlayersRef.current = locked
+        setLockedPlayers(locked)
+        send({ type: 'LOCK_STATUS', playerId: who })
+        return
       }
 
-      if (Array.isArray(event.players) && event.players.length > 0) {
+      if (event.type === 'LOCK_CODE_ASSIGNED') {
+        if (from !== 'host' || event.playerId !== myPlayerIdRef.current || !/^[1-9]{3}$/.test(event.code)) return
+        setMyCode(event.code)
+        return
+      }
+
+      if (event.type === 'LOCK_STATUS') {
+        if (from !== 'host') return
+        const nextLocked = lockedPlayersRef.current.includes(event.playerId)
+          ? lockedPlayersRef.current
+          : [...lockedPlayersRef.current, event.playerId]
+        lockedPlayersRef.current = nextLocked
+        setLockedPlayers(nextLocked)
+        return
+      }
+
+      if (event.type === 'CODES_REVEALED') {
+        if (from !== 'host') return
+        codesByPlayerRef.current = event.codesByPlayer
+        setCodesByPlayer(event.codesByPlayer)
+        return
+      }
+
+      if (event.type === 'BLUFF_SUBMITTED') {
+        if (selfIdRef.current === 'host') {
+          if (previewPhaseRef.current !== 'bluff') return
+          const mappedId = peerToPlayerRef.current[from]
+          if (from !== 'host' && (mappedId !== event.playerId || activePeerByPlayerRef.current[event.playerId] !== from)) return
+          if (!playersRef.current.some((p) => p.id === event.playerId)) return
+          if (bluffedPlayersRef.current.includes(event.playerId)) return
+          send({ ...event, text: event.text.slice(0, 40) })
+        } else if (from !== 'host') {
+          return
+        }
+        const who = event.playerId
+        if (bluffedPlayersRef.current.includes(who)) return
+        const nextBluffs = { ...bluffsRef.current, [who]: event.text.slice(0, 40) }
+        bluffsRef.current = nextBluffs
+        setBluffs(nextBluffs)
+        const bluffed = bluffedPlayersRef.current.includes(who)
+          ? bluffedPlayersRef.current
+          : [...bluffedPlayersRef.current, who]
+        bluffedPlayersRef.current = bluffed
+        setBluffedPlayers(bluffed)
+        return
+      }
+
+      if (event.type === 'CHALLENGE_SUBMITTED') {
+        if (selfIdRef.current === 'host') {
+          if (previewPhaseRef.current !== 'challenge') return
+          const mappedId = peerToPlayerRef.current[from]
+          if (from !== 'host' && (mappedId !== event.challengerId || activePeerByPlayerRef.current[event.challengerId] !== from)) return
+          if (event.challengerId === event.targetId) return
+          if (!playersRef.current.some((p) => p.id === event.challengerId) || !playersRef.current.some((p) => p.id === event.targetId)) return
+          if (Object.prototype.hasOwnProperty.call(challengesRef.current, event.challengerId)) return
+          send(event)
+        } else if (from !== 'host') {
+          return
+        }
+        if (Object.prototype.hasOwnProperty.call(challengesRef.current, event.challengerId)) return
+        const nextChallenges = { ...challengesRef.current, [event.challengerId]: event.targetId }
+        challengesRef.current = nextChallenges
+        setChallenges(nextChallenges)
+        return
+      }
+
+      if (event.type === 'GUESS_SUBMITTED') {
+        if (selfIdRef.current !== 'host' || previewPhaseRef.current !== 'guess') return
+        const mappedId = peerToPlayerRef.current[from]
+        if (from !== 'host' && (mappedId !== event.guesserId || activePeerByPlayerRef.current[event.guesserId] !== from)) return
+        if (!event.guessId || !/^[1-9]{3}$/.test(event.code)) return
+        if (event.guesserId === event.targetId) return
+        if (!playersRef.current.some((p) => p.id === event.guesserId) || !playersRef.current.some((p) => p.id === event.targetId)) return
+        const list = guessesRef.current[event.guesserId] ?? []
+        if (list.some((g) => g.guessId === event.guessId) || list.length >= 3) return
+        const secret = codesByPlayerRef.current[event.targetId]
+        if (!secret) return
+        const result = scoreGuess(event.code, secret)
+        const resolved = {
+          guessId: event.guessId,
+          guesserId: event.guesserId,
+          targetId: event.targetId,
+          code: event.code,
+          result,
+        }
+        const targetName = playersRef.current.find((p) => p.id === event.targetId)?.name ?? '???'
+        const nextList = [...list, { guessId: event.guessId, targetId: event.targetId, targetName, code: event.code, result }]
+        guessesRef.current = { ...guessesRef.current, [event.guesserId]: nextList }
+        setGuesses(guessesRef.current)
+        send({ type: 'GUESS_RESOLVED', ...resolved })
+        return
+      }
+
+      if (event.type === 'GUESS_RESOLVED') {
+        if (from !== 'host') return
+        const targetName = playersRef.current.find((p) => p.id === event.targetId)?.name ?? '???'
+        const list = guessesRef.current[event.guesserId] ?? []
+        const replacement: MyGuess = { guessId: event.guessId, targetId: event.targetId, targetName, code: event.code, result: event.result }
+        const index = list.findIndex((g) => g.guessId === event.guessId)
+        const nextList = index >= 0 ? list.map((g, i) => i === index ? replacement : g) : [...list, replacement]
+        const next = { ...guessesRef.current, [event.guesserId]: nextList }
+        guessesRef.current = next
+        setGuesses(next)
+        if (event.guesserId === myPlayerIdRef.current) {
+          if (event.result.correctPosition === 3) play('correct')
+          else if (event.result.points > 0) play('select')
+          else play('wrong')
+        }
+        return
+      }
+
+      if (event.type === 'ROUND_COMPLETE') {
+        if (from !== 'host') return
+        setScores(event.scores)
+        scoresRef.current = event.scores
+        setRoundDeltas(event.deltas)
+        setChallengeResults(event.challengeResults)
+        return
+      }
+
+      if (event.type === 'PEEK_SHARED') {
+        if (selfIdRef.current === 'host') {
+          const mappedId = peerToPlayerRef.current[from]
+          if (from !== 'host' && (mappedId !== event.from || activePeerByPlayerRef.current[event.from] !== from)) return
+          if (event.to === 'host') {
+            const sender = playersRef.current.find((p) => p.id === event.from)
+            setMyPeek({ fromPlayerId: event.from, fromPlayerName: sender?.name ?? '???', digitIndex: event.digitIndex, digit: event.digit })
+          } else {
+            sendToPlayer(event.to, event)
+          }
+          return
+        }
+        if (from !== 'host' || event.to !== myPlayerIdRef.current) return
+        const sender = playersRef.current.find((p) => p.id === event.from)
+        setMyPeek({
+          fromPlayerId: event.from,
+          fromPlayerName: sender?.name ?? '???',
+          digitIndex: event.digitIndex,
+          digit: event.digit,
+        })
+        return
+      }
+
+      if (event.type === 'GAME_STATE_SYNC') {
+        setGameStarted(event.gameStarted)
+        gameStartedRef.current = event.gameStarted
+        setPreviewPhase(event.phase as Phase)
+        previewPhaseRef.current = event.phase as Phase
+        setPhaseDeadlineAt(event.deadlineAt ?? null)
+        phaseDeadlineAtRef.current = event.deadlineAt ?? null
+        setLockedPlayers(event.lockedPlayers)
+        lockedPlayersRef.current = event.lockedPlayers
+        setBluffedPlayers(event.bluffedPlayers)
+        bluffedPlayersRef.current = event.bluffedPlayers
+        setBluffs(event.bluffs)
+        bluffsRef.current = event.bluffs
+        setChallenges(event.challenges ?? {})
+        challengesRef.current = event.challenges ?? {}
+        setRoundNumber(event.roundNumber ?? 1)
+        roundNumberRef.current = event.roundNumber ?? 1
+        setScores(event.scores ?? {})
+        scoresRef.current = event.scores ?? {}
+        if (Array.isArray(event.spectators)) {
+          setSpectators(event.spectators)
+          spectatorsRef.current = event.spectators
+        }
+
+        if (Array.isArray(event.players) && event.players.length > 0) {
+          setPlayers(event.players)
+          playersRef.current = event.players
+        }
+
+        if (screen === 'spectator') {
+          setSpectatorJoined(true)
+          return
+        }
+
+        if (event.gameStarted) {
+          clearAll()
+          setScreen('stage')
+          setJoinedMidRound(true)
+        }
+        return
+      }
+
+      if (event.type === 'ROSTER_SYNC') {
+        playersRef.current = event.players
+        heldPlayersRef.current = event.heldPlayers ?? []
+        setPlayers(event.players)
+        setHeldPlayers(event.heldPlayers ?? [])
+        return
+      }
+
+      if (event.type === 'ROUND_SNAPSHOT') {
         setPlayers(event.players)
         playersRef.current = event.players
-      }
-
-      if (screen === 'spectator') {
-        setSpectatorJoined(true)
+        setHeldPlayers(event.heldPlayers ?? [])
+        heldPlayersRef.current = event.heldPlayers ?? []
+        setSpectators(event.spectators ?? [])
+        spectatorsRef.current = event.spectators ?? []
+        setGameStarted(event.gameStarted)
+        gameStartedRef.current = event.gameStarted
+        setPhaseDeadlineAt(event.deadlineAt ?? null)
+        phaseDeadlineAtRef.current = event.deadlineAt ?? null
+        setRoundNumber(event.roundNumber ?? 1)
+        roundNumberRef.current = event.roundNumber ?? 1
+        setPreviewPhase(event.phase as Phase)
+        previewPhaseRef.current = event.phase as Phase
+        setLockedPlayers(event.lockedPlayers ?? [])
+        lockedPlayersRef.current = event.lockedPlayers ?? []
+        setBluffedPlayers(event.bluffedPlayers ?? [])
+        bluffedPlayersRef.current = event.bluffedPlayers ?? []
+        setBluffs(event.bluffs ?? {})
+        bluffsRef.current = event.bluffs ?? {}
+        setChallenges(event.challenges ?? {})
+        challengesRef.current = event.challenges ?? {}
+        const snapshotCodes = event.phase === 'reveal' ? (event.codesByPlayer ?? {}) : {}
+        setCodesByPlayer(snapshotCodes)
+        codesByPlayerRef.current = snapshotCodes
+        setScores(event.scores ?? {})
+        scoresRef.current = event.scores ?? {}
+        if (event.gameStarted && screen !== 'reason' && screen !== 'waiting') {
+          clearAll()
+          setScreen('stage')
+        }
         return
       }
 
-      if (event.gameStarted) {
+      if (event.type === 'JOIN_APPROVED') {
+        if (event.playerId !== myPlayerIdRef.current) return
         clearAll()
-        setScreen('stage')
         setJoinedMidRound(true)
-      }
-      return
-    }
-
-    if (event.type === 'ROSTER_SYNC') {
-      playersRef.current = event.players
-      heldPlayersRef.current = event.heldPlayers ?? []
-      setPlayers(event.players)
-      setHeldPlayers(event.heldPlayers ?? [])
-      return
-    }
-
-    if (event.type === 'ROUND_SNAPSHOT') {
-      setPlayers(event.players)
-      playersRef.current = event.players
-      setHeldPlayers(event.heldPlayers ?? [])
-      heldPlayersRef.current = event.heldPlayers ?? []
-      setSpectators(event.spectators ?? [])
-      spectatorsRef.current = event.spectators ?? []
-      setGameStarted(event.gameStarted)
-      gameStartedRef.current = event.gameStarted
-      setPhaseDeadlineAt(event.deadlineAt ?? null)
-      phaseDeadlineAtRef.current = event.deadlineAt ?? null
-      setRoundNumber(event.roundNumber ?? 1)
-      roundNumberRef.current = event.roundNumber ?? 1
-      setPreviewPhase(event.phase as Phase)
-      previewPhaseRef.current = event.phase as Phase
-      setLockedPlayers(event.lockedPlayers ?? [])
-      lockedPlayersRef.current = event.lockedPlayers ?? []
-      setBluffedPlayers(event.bluffedPlayers ?? [])
-      bluffedPlayersRef.current = event.bluffedPlayers ?? []
-      setBluffs(event.bluffs ?? {})
-      bluffsRef.current = event.bluffs ?? {}
-      setChallenges(event.challenges ?? {})
-      challengesRef.current = event.challenges ?? {}
-      const snapshotCodes = event.phase === 'reveal' ? (event.codesByPlayer ?? {}) : {}
-      setCodesByPlayer(snapshotCodes)
-      codesByPlayerRef.current = snapshotCodes
-      setScores(event.scores ?? {})
-      scoresRef.current = event.scores ?? {}
-      if (event.gameStarted && screen !== 'reason' && screen !== 'waiting') {
-        clearAll()
         setScreen('stage')
-      }
-      return
-    }
-
-    if (event.type === 'JOIN_APPROVED') {
-      if (event.playerId !== myPlayerIdRef.current) return
-      clearAll()
-      setJoinedMidRound(true)
-      setScreen('stage')
-      return
-    }
-
-    if (event.type === 'JOIN_REJECTED') {
-      if (event.playerId !== myPlayerIdRef.current) return
-      alert('The host declined your request to join.')
-      clearSession()
-      void leaveRoom()
-      setScreen('landing')
-      return
-    }
-
-    if (event.type === 'REASON_UPDATED') {
-      setPendingPlayers((prev) =>
-        prev.map((p) =>
-          p.id === event.playerId ? { ...p, rejoinReason: event.reason } : p
-        )
-      )
-      return
-    }
-
-    if (event.type === 'HELLO' || event.type === 'PLAYER_JOINED') {
-      if (event.type === 'PLAYER_JOINED' && selfIdRef.current === 'host' && from !== 'host') return
-      const incoming = event.player
-      const id = incoming.id || from
-
-      const mine = myPlayerIdRef.current
-      if (id === mine) return
-      if (from === selfIdRef.current) return
-
-      const isNew = !playersRef.current.some((p) => p.id === id)
-
-      if (event.type === 'HELLO' && selfId === 'host') {
-        const isReturning = event.isReturning === true
-        if (incoming.role !== 'player' || !/^guest-[a-z0-9]+-[a-z0-9]+$/i.test(id)) return
-        const mappedId = peerToPlayerRef.current[from]
-        if (mappedId && mappedId !== id) return
-        const rosterAlreadyHasId = playersRef.current.some((p) => p.id === id)
-
-        if (isReturning) {
-          if (activePeerByPlayerRef.current[id] === from) return
-          pendingPeerByPlayerRef.current[id] = from
-          setPendingPlayers((prev) => {
-            if (prev.some((p) => p.id === id)) return prev
-            return [...prev, { ...incoming, id, status: 'pending' }]
-          })
-          return
-        }
-
-        // A connection cannot claim an ID already owned by another peer.
-        if (rosterAlreadyHasId) {
-          if (activePeerByPlayerRef.current[id] === from) return // duplicate HELLO retry
-          return
-        }
-
-        peerToPlayerRef.current[from] = id
-        activePeerByPlayerRef.current[id] = from
-        network.setActivePlayerPeer(id, from)
-        const active: Player = { ...incoming, id, status: 'active' }
-        const roster = [...playersRef.current, active]
-
-        // If a round is already running, hold this player until the next round.
-        const held = gameStartedRef.current
-          ? [...heldPlayersRef.current, id]
-          : heldPlayersRef.current
-
-        setPlayers(roster)
-        playersRef.current = roster
-        setHeldPlayers(held)
-        heldPlayersRef.current = held
-
-        // Synchronize the updated roster with every connected guest.
-        syncRoster(roster, held)
-        // Send a phase-aware snapshot to the newcomer.
-        send(buildSnapshot(roster, held))
         return
       }
 
-      if (event.type === 'HELLO' && !event.isReturning) {
-        setPlayers((prev) => {
-          if (prev.some((p) => p.id === id)) return prev
-          return [...prev, { ...incoming, id, status: 'active' }]
-        })
-        if (isNew && mine && selfName) {
-          send({
-            type: 'PLAYER_JOINED',
-            player: {
-              id: mine,
-              name: selfName,
-              role: 'player',
-              isHost: mine === 'host',
-              score: 0,
-              joinedAt: mine === 'host' ? 1 : 2,
-              playerToken: getOrCreateToken(),
-              status: 'active',
-            },
+      if (event.type === 'JOIN_REJECTED') {
+        if (event.playerId !== myPlayerIdRef.current) return
+        alert('The host declined your request to join.')
+        clearSession()
+        void leaveRoom()
+        setScreen('landing')
+        return
+      }
+
+      if (event.type === 'REASON_UPDATED') {
+        setPendingPlayers((prev) =>
+          prev.map((p) =>
+            p.id === event.playerId ? { ...p, rejoinReason: event.reason } : p
+          )
+        )
+        return
+      }
+
+      if (event.type === 'HELLO' || event.type === 'PLAYER_JOINED') {
+        if (event.type === 'PLAYER_JOINED' && selfIdRef.current === 'host' && from !== 'host') return
+        const incoming = event.player
+        const id = incoming.id || from
+
+        const mine = myPlayerIdRef.current
+        if (id === mine) return
+        if (from === selfIdRef.current) return
+
+        const isNew = !playersRef.current.some((p) => p.id === id)
+
+        if (event.type === 'HELLO' && selfId === 'host') {
+          const isReturning = event.isReturning === true
+          if (incoming.role !== 'player' || !/^guest-[a-z0-9]+-[a-z0-9]+$/i.test(id)) return
+          const mappedId = peerToPlayerRef.current[from]
+          if (mappedId && mappedId !== id) return
+          const rosterAlreadyHasId = playersRef.current.some((p) => p.id === id)
+
+          if (isReturning) {
+            if (activePeerByPlayerRef.current[id] === from) return
+            pendingPeerByPlayerRef.current[id] = from
+            setPendingPlayers((prev) => {
+              if (prev.some((p) => p.id === id)) return prev
+              return [...prev, { ...incoming, id, status: 'pending' }]
+            })
+            return
+          }
+
+          // A connection cannot claim an ID already owned by another peer.
+          if (rosterAlreadyHasId) {
+            if (activePeerByPlayerRef.current[id] === from) return
+            return
+          }
+
+          peerToPlayerRef.current[from] = id
+          activePeerByPlayerRef.current[id] = from
+          network.setActivePlayerPeer(id, from)
+          const active: Player = { ...incoming, id, status: 'active' }
+          const roster = [...playersRef.current, active]
+
+          const held = gameStartedRef.current
+            ? [...heldPlayersRef.current, id]
+            : heldPlayersRef.current
+
+          setPlayers(roster)
+          playersRef.current = roster
+          setHeldPlayers(held)
+          heldPlayersRef.current = held
+
+          syncRoster(roster, held)
+          send(buildSnapshot(roster, held))
+          return
+        }
+
+        if (event.type === 'HELLO' && !event.isReturning) {
+          setPlayers((prev) => {
+            if (prev.some((p) => p.id === id)) return prev
+            return [...prev, { ...incoming, id, status: 'active' }]
+          })
+          if (isNew && mine && selfName) {
+            send({
+              type: 'PLAYER_JOINED',
+              player: {
+                id: mine,
+                name: selfName,
+                role: 'player',
+                isHost: mine === 'host',
+                score: 0,
+                joinedAt: mine === 'host' ? 1 : 2,
+                playerToken: getOrCreateToken(),
+                status: 'active',
+              },
+            })
+          }
+        }
+
+        if (event.type === 'PLAYER_JOINED') {
+          setPlayers((prev) => {
+            if (prev.some((p) => p.id === id)) return prev
+            return [...prev, { ...incoming, id, status: 'active' }]
           })
         }
       }
 
-      if (event.type === 'PLAYER_JOINED') {
-        setPlayers((prev) => {
-          if (prev.some((p) => p.id === id)) return prev
-          return [...prev, { ...incoming, id, status: 'active' }]
-        })
+      if (event.type === 'PLAYER_LEFT') {
+        if (selfIdRef.current === 'host' && from !== 'host') {
+          const mappedId = peerToPlayerRef.current[from]
+          if (mappedId !== event.playerId || activePeerByPlayerRef.current[event.playerId] !== from) return
+          delete peerToPlayerRef.current[from]
+          delete activePeerByPlayerRef.current[event.playerId]
+        }
+        const departed = playersRef.current.find((p) => p.id === event.playerId)
+        if (departed) setConnectionNotice(`${departed.name} left the room.`)
+        const roster = playersRef.current.filter((p) => p.id !== event.playerId)
+        const held = heldPlayersRef.current.filter((x) => x !== event.playerId)
+        playersRef.current = roster
+        heldPlayersRef.current = held
+        setPlayers(roster)
+        setHeldPlayers(held)
+        setPendingPlayers((prev) => prev.filter((p) => p.id !== event.playerId))
+        const nextLocked = lockedPlayersRef.current.filter((id) => id !== event.playerId)
+        lockedPlayersRef.current = nextLocked
+        setLockedPlayers(nextLocked)
+        const nextBluffed = bluffedPlayersRef.current.filter((id) => id !== event.playerId)
+        bluffedPlayersRef.current = nextBluffed
+        setBluffedPlayers(nextBluffed)
+        const nextCodes = { ...codesByPlayerRef.current }; delete nextCodes[event.playerId]
+        codesByPlayerRef.current = nextCodes; setCodesByPlayer(nextCodes)
+        const nextBluffs = { ...bluffsRef.current }; delete nextBluffs[event.playerId]
+        bluffsRef.current = nextBluffs; setBluffs(nextBluffs)
+        const nextChallenges = { ...challengesRef.current }
+        delete nextChallenges[event.playerId]
+        for (const [challengerId, targetId] of Object.entries(nextChallenges)) {
+          if (targetId === event.playerId) delete nextChallenges[challengerId]
+        }
+        challengesRef.current = nextChallenges; setChallenges(nextChallenges)
+        const nextGuesses = { ...guessesRef.current }
+        delete nextGuesses[event.playerId]
+        for (const [guesserId, list] of Object.entries(nextGuesses)) {
+          nextGuesses[guesserId] = list.filter((guess) => guess.targetId !== event.playerId)
+        }
+        guessesRef.current = nextGuesses; setGuesses(nextGuesses)
+        if (selfIdRef.current === 'host') {
+          if (from !== 'host') send({ type: 'PLAYER_LEFT', playerId: event.playerId, reason: event.reason })
+          syncRoster(roster, held)
+        }
+        return
       }
-    }
-
-    if (event.type === 'PLAYER_LEFT') {
-      if (selfIdRef.current === 'host' && from !== 'host') {
-        const mappedId = peerToPlayerRef.current[from]
-        if (mappedId !== event.playerId || activePeerByPlayerRef.current[event.playerId] !== from) return
-        delete peerToPlayerRef.current[from]
-        delete activePeerByPlayerRef.current[event.playerId]
-      }
-      const departed = playersRef.current.find((p) => p.id === event.playerId)
-      if (departed) setConnectionNotice(`${departed.name} left the room.`)
-      const roster = playersRef.current.filter((p) => p.id !== event.playerId)
-      const held = heldPlayersRef.current.filter((x) => x !== event.playerId)
-      playersRef.current = roster
-      heldPlayersRef.current = held
-      setPlayers(roster)
-      setHeldPlayers(held)
-      setPendingPlayers((prev) => prev.filter((p) => p.id !== event.playerId))
-      const nextLocked = lockedPlayersRef.current.filter((id) => id !== event.playerId)
-      lockedPlayersRef.current = nextLocked
-      setLockedPlayers(nextLocked)
-      const nextBluffed = bluffedPlayersRef.current.filter((id) => id !== event.playerId)
-      bluffedPlayersRef.current = nextBluffed
-      setBluffedPlayers(nextBluffed)
-      const nextCodes = { ...codesByPlayerRef.current }; delete nextCodes[event.playerId]
-      codesByPlayerRef.current = nextCodes; setCodesByPlayer(nextCodes)
-      const nextBluffs = { ...bluffsRef.current }; delete nextBluffs[event.playerId]
-      bluffsRef.current = nextBluffs; setBluffs(nextBluffs)
-      const nextChallenges = { ...challengesRef.current }
-      delete nextChallenges[event.playerId]
-      for (const [challengerId, targetId] of Object.entries(nextChallenges)) {
-        if (targetId === event.playerId) delete nextChallenges[challengerId]
-      }
-      challengesRef.current = nextChallenges; setChallenges(nextChallenges)
-      const nextGuesses = { ...guessesRef.current }
-      delete nextGuesses[event.playerId]
-      for (const [guesserId, list] of Object.entries(nextGuesses)) {
-        nextGuesses[guesserId] = list.filter((guess) => guess.targetId !== event.playerId)
-      }
-      guessesRef.current = nextGuesses; setGuesses(nextGuesses)
-      if (selfIdRef.current === 'host') {
-        if (from !== 'host') send({ type: 'PLAYER_LEFT', playerId: event.playerId, reason: event.reason })
-        syncRoster(roster, held)
-      }
-      return
-    }
     } finally {
       clearLastEvent()
     }
@@ -1216,7 +1211,6 @@ function App() {
         return
       }
 
-      // A pending rejoin has no authority over an active player's session.
       const pendingEntry = Object.entries(pendingPeerByPlayerRef.current).find(([, id]) => id === peerId)
       if (pendingEntry) {
         const [pendingPlayerId] = pendingEntry
@@ -1225,13 +1219,12 @@ function App() {
         return
       }
 
-      // Only remove a connection once it has been associated with a player or spectator.
       const playerId = peerToPlayerRef.current[peerId]
       if (!playerId) return
       const departed = playersRef.current.find((p) => p.id === playerId)
       if (departed && activePeerByPlayerRef.current[playerId] !== peerId) {
         delete peerToPlayerRef.current[peerId]
-        return // a stale connection closed after a newer rejoin was approved
+        return
       }
       if (!departed) {
         const nextSpectators = spectatorsRef.current.filter((s) => s.id !== playerId)
@@ -1243,7 +1236,7 @@ function App() {
             gameStarted: gameStartedRef.current,
             phase: previewPhaseRef.current,
             deadlineAt: phaseDeadlineAtRef.current ?? undefined,
-            roundLabel: `R${roundNumberRef.current}/10`,
+            roundLabel: `R${roundNumberRef.current}/5`,
             lockedPlayers: lockedPlayersRef.current,
             bluffedPlayers: bluffedPlayersRef.current,
             bluffs: bluffsRef.current,
@@ -1261,7 +1254,6 @@ function App() {
       delete peerToPlayerRef.current[peerId]
       delete activePeerByPlayerRef.current[playerId]
 
-      // Build the new roster without them.
       const roster = playersRef.current.filter((p) => p.id !== playerId)
       const held = heldPlayersRef.current.filter((x) => x !== playerId)
 
@@ -1270,7 +1262,6 @@ function App() {
       setPlayers(roster)
       setHeldPlayers(held)
 
-      // Also pull them out of every other list they could be in.
       setPendingPlayers((prev) => prev.filter((p) => p.id !== playerId))
       setSpectators((prev) => prev.filter((p) => p.id !== playerId))
       const nextLocked = lockedPlayersRef.current.filter((x) => x !== playerId)
@@ -1296,9 +1287,7 @@ function App() {
       }
       guessesRef.current = nextGuesses; setGuesses(nextGuesses)
 
-      // Tell guests to clean up their own lists...
       send({ type: 'PLAYER_LEFT', playerId })
-      // ...then read the new clipboard out loud.
       syncRoster(roster, held)
     }
 
@@ -1435,7 +1424,7 @@ function App() {
       gameStarted: gameStartedRef.current,
       deadlineAt: phaseDeadlineAtRef.current ?? undefined,
       phase: previewPhaseRef.current,
-      roundLabel: `R${roundNumberRef.current}/10`,
+      roundLabel: `R${roundNumberRef.current}/5`,
       roundNumber: roundNumberRef.current,
       lockedPlayers: lockedPlayersRef.current,
       bluffedPlayers: bluffedPlayersRef.current,
@@ -1478,7 +1467,6 @@ function App() {
     heldPlayersRef.current = held
 
     syncRoster(newRoster, held)
-    // Rejoin decisions and snapshots are private to the waiting connection.
     network.sendToPeer(pendingPeerId, { type: 'JOIN_APPROVED', playerId: p.id })
     network.sendToPeer(pendingPeerId, buildSnapshot(newRoster, held))
   }
@@ -1492,7 +1480,6 @@ function App() {
     }
   }
 
-  // ---- Send a reaction (spectator only, throttled) ----
   function sendReaction(emoji: string) {
     const now = Date.now()
     if (now - lastReactionAtRef.current < 400) return
@@ -1563,6 +1550,7 @@ function App() {
         border: '1px solid rgba(0, 245, 212, 0.25)',
         borderRadius: 'var(--radius-md)',
         fontSize: 12,
+        flexWrap: 'wrap',
       }}
     >
       <div style={{ color: 'var(--color-text-muted)' }}>
@@ -1600,6 +1588,25 @@ function App() {
           }}
         >
           Copy
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const fresh = regenerateToken()
+            setMyRejoinCode(fresh)
+          }}
+          title="Generate a new rejoin code for this tab"
+          style={{
+            background: 'transparent',
+            border: '1px solid var(--color-magenta)',
+            color: 'var(--color-magenta)',
+            borderRadius: 6,
+            padding: '2px 8px',
+            fontSize: 11,
+            cursor: 'pointer',
+          }}
+        >
+          New
         </button>
       </div>
     </div>
@@ -1660,7 +1667,7 @@ function App() {
         players={players}
         spectators={spectators}
         phase={previewPhase}
-        roundLabel={`R${roundNumber}/10`}
+        roundLabel={`R${roundNumber}/5`}
         gameStarted={gameStarted}
         roomCode={roomCode}
         reactions={reactions}
@@ -1684,21 +1691,18 @@ function App() {
             setPlayerName(name)
             setConnectionNotice(null)
 
-            const alreadyConnected = stillConnectedTo === code
-
-            if (!alreadyConnected) {
-              await joinRoom(code, name)
-              await new Promise((r) => setTimeout(r, 250))
-              setStillConnectedTo(code)
-            }
+            // ALWAYS open a fresh Sparrow connection. Reusing an old
+            // connection risks silently dropping messages if the data
+            // channel was closed by the peer or by Sparrow itself.
+            await joinRoom(code, name)
+            await new Promise((r) => setTimeout(r, 250))
 
             const savedSession = loadSession()
             const hasManualCode = rejoinCode.trim().length > 0
             const hasMatchingSession =
               savedSession !== null && savedSession.roomCode === code
 
-            const isReturning =
-              hasManualCode || hasMatchingSession || alreadyConnected
+            const isReturning = hasManualCode || hasMatchingSession
 
             const token = hasManualCode
               ? rejoinCode.trim().toUpperCase()
@@ -1835,6 +1839,9 @@ function App() {
           onClick={async () => {
             clearSession()
             await leaveRoom()
+            peerToPlayerRef.current = {}
+            activePeerByPlayerRef.current = {}
+            pendingPeerByPlayerRef.current = {}
             setPlayers([])
             setPendingPlayers([])
             setMyPlayerId(null)
@@ -1898,6 +1905,9 @@ function App() {
           onClick={async () => {
             clearSession()
             await leaveRoom()
+            peerToPlayerRef.current = {}
+            activePeerByPlayerRef.current = {}
+            pendingPeerByPlayerRef.current = {}
             setPlayers([])
             setPendingPlayers([])
             setMyPlayerId(null)
@@ -1918,8 +1928,100 @@ function App() {
       <div style={{ padding: '24px', minHeight: '100vh' }}>
         <div style={{ maxWidth: 560, margin: '0 auto' }}>
           {renderTopBar()}
-          {connectionNotice && <div role="status" style={{ margin: '0 0 12px', padding: 10, border: '1px solid var(--color-amber)', borderRadius: 8, color: 'var(--color-amber)' }}>{connectionNotice}</div>}
+          {connectionNotice && (
+            <div
+              role="status"
+              style={{
+                margin: '0 0 12px',
+                padding: 10,
+                border: '1px solid var(--color-amber)',
+                borderRadius: 8,
+                color: 'var(--color-amber)',
+              }}
+            >
+              {connectionNotice}
+            </div>
+          )}
           {RejoinPill}
+
+          {isHost && pendingPlayers.length > 0 && (
+            <div
+              style={{
+                padding: 16,
+                marginBottom: 16,
+                background: 'rgba(255, 183, 3, 0.08)',
+                border: '1px solid var(--color-amber)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  marginBottom: 12,
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 12,
+                  letterSpacing: '0.2em',
+                  color: 'var(--color-amber)',
+                  textShadow: '0 0 8px var(--color-amber)',
+                }}
+              >
+                ⚠ {pendingPlayers.length} PLAYER
+                {pendingPlayers.length === 1 ? '' : 'S'} WAITING TO REJOIN
+              </p>
+              {pendingPlayers.map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    padding: '10px 0',
+                    borderTop: '1px solid rgba(255, 183, 3, 0.2)',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <span
+                      style={{ fontWeight: 600, color: 'var(--color-text)' }}
+                    >
+                      {p.name}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Button
+                        variant="primary"
+                        onClick={() => approvePending(p)}
+                        style={{ padding: '6px 14px', fontSize: 13 }}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => rejectPending(p)}
+                        style={{ padding: '6px 14px', fontSize: 13 }}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                  {p.rejoinReason && (
+                    <p
+                      style={{
+                        margin: '6px 0 0',
+                        fontSize: 12,
+                        fontStyle: 'italic',
+                        color: 'var(--color-text-muted)',
+                      }}
+                    >
+                      Reason: "{p.rejoinReason}"
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <LobbyScreen
           roomCode={roomCode ?? '------'}
@@ -1942,12 +2044,18 @@ function App() {
             roundNumberRef.current = 1
             setScores({})
             scoresRef.current = {}
-            setLockedPlayers([]); lockedPlayersRef.current = []
-            setCodesByPlayer({}); codesByPlayerRef.current = {}
-            setBluffs({}); bluffsRef.current = {}
-            setBluffedPlayers([]); bluffedPlayersRef.current = []
-            setChallenges({}); challengesRef.current = {}
-            setGuesses({}); guessesRef.current = {}
+            setLockedPlayers([])
+            lockedPlayersRef.current = []
+            setCodesByPlayer({})
+            codesByPlayerRef.current = {}
+            setBluffs({})
+            bluffsRef.current = {}
+            setBluffedPlayers([])
+            bluffedPlayersRef.current = []
+            setChallenges({})
+            challengesRef.current = {}
+            setGuesses({})
+            guessesRef.current = {}
             setRoundDeltas({})
             setChallengeResults([])
             setPreviewPhase('lock')
@@ -1963,7 +2071,7 @@ function App() {
             clearAll()
             play('select')
             speak('Game starting. Round one')
-            send({ type: 'GAME_START', roundLabel: 'R1/10', deadlineAt })
+            send({ type: 'GAME_START', roundLabel: 'R1/5', deadlineAt })
             setScreen('stage')
           }}
           onReturnToStage={() => setScreen('stage')}
@@ -2128,8 +2236,6 @@ function App() {
       play('select')
     }
 
-    // The host-level deadline is authoritative. Panel callbacks must not
-    // advance early, or they would bypass the grace window for network messages.
     const handlePeekComplete = () => undefined
 
     const handleBluff = (text: string) => {
@@ -2338,7 +2444,21 @@ function App() {
             </div>
           )}
 
-          {connectionNotice && <div role="status" style={{ maxWidth: 560, margin: '0 auto 12px', padding: 10, border: '1px solid var(--color-amber)', borderRadius: 8, color: 'var(--color-amber)' }}>{connectionNotice}</div>}
+          {connectionNotice && (
+            <div
+              role="status"
+              style={{
+                maxWidth: 560,
+                margin: '0 auto 12px',
+                padding: 10,
+                border: '1px solid var(--color-amber)',
+                borderRadius: 8,
+                color: 'var(--color-amber)',
+              }}
+            >
+              {connectionNotice}
+            </div>
+          )}
           {renderTopBar(
             <button
               onClick={() => setScreen('lobby')}
@@ -2422,8 +2542,8 @@ function App() {
               bluff: previewPhase === 'bluff' ? bluffs[p.id] ?? null : null,
             }))}
             phase={previewPhase}
-            roundLabel={`R${roundNumber}/10${isDoubleRound ? ' ×2' : ''}`}
-        joinBannerName={currentName}
+            roundLabel={`R${roundNumber}/5${isDoubleRound ? ' ×2' : ''}`}
+            joinBannerName={currentName}
             onJoinBannerDismiss={dismissCurrent}
           />
           {isHeld && previewPhase !== 'reveal' && (
@@ -2440,7 +2560,6 @@ function App() {
               You joined mid-round. You'll play from the next round.
             </div>
           )}
-          
 
           {previewPhase === 'lock' && !isHeld && (
             <div style={{ maxWidth: 480, margin: '32px auto 0' }}>
@@ -2568,7 +2687,6 @@ function App() {
 
           const token = getOrCreateToken()
           setMyPlayerId('host')
-          setStillConnectedTo(null)
 
           const hostPlayer: Player = {
             id: 'host',

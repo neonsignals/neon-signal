@@ -11,21 +11,34 @@ export type SavedSession = {
   expiresAt: number
 }
 
-/** Get or create a stable browser token. Persists across refreshes. */
+function generateToken(): string {
+  return `P${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+}
+
 export function getOrCreateToken(): string {
   try {
     let t = localStorage.getItem(TOKEN_KEY)
     if (!t) {
-      t = `P${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+      t = generateToken()
       localStorage.setItem(TOKEN_KEY, t)
     }
     return t
   } catch {
-    return `P${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+    return generateToken()
   }
 }
 
-/** Persist the current session so a refresh can rejoin. */
+/** Force a fresh rejoin code for this browser. */
+export function regenerateToken(): string {
+  try {
+    const t = generateToken()
+    localStorage.setItem(TOKEN_KEY, t)
+    return t
+  } catch {
+    return generateToken()
+  }
+}
+
 export function saveSession(s: Omit<SavedSession, 'expiresAt'>): void {
   try {
     const data: SavedSession = { ...s, expiresAt: Date.now() + HOUR }
@@ -35,7 +48,6 @@ export function saveSession(s: Omit<SavedSession, 'expiresAt'>): void {
   }
 }
 
-/** Read the persisted session, or null if missing/expired. */
 export function loadSession(): SavedSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
@@ -51,7 +63,6 @@ export function loadSession(): SavedSession | null {
   }
 }
 
-/** Wipe the persisted session (on voluntary leave). */
 export function clearSession(): void {
   try {
     localStorage.removeItem(SESSION_KEY)

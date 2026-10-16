@@ -31,13 +31,13 @@ export function RevealPanel({
 }: RevealPanelProps) {
   const secondsLeft = usePhaseCountdown(deadlineAt, durationMs, onComplete)
 
-  const isFinalRound = roundNumber >= 10
+  const isFinalRound = roundNumber >= 5
 
   return (
     <div className="reveal-panel">
       <p className="reveal-panel-title">🎴 REVEAL</p>
       <p className="reveal-panel-subtitle">
-        Round {roundNumber}/10{isDoubleRound ? ' · ×2' : ''} · {secondsLeft}s
+        Round {roundNumber}/5{isDoubleRound ? ' · ×2' : ''} · {secondsLeft}s
       </p>
 
       <div className="reveal-panel-cards">

@@ -3,52 +3,64 @@ import type { NetworkAdapter } from './NetworkAdapter'
 import type { GameEvent, RoomCode } from './types'
 
 /**
- * Custom ICE configurator. Overrides Sparrow's defaults with
- * STUN + TURN servers that work on restrictive networks.
+ * ICE configuration for Sparrow-RTC.
  *
- * TURN credentials are read from build-time variables to avoid committing
- * reusable credentials. Vite client variables remain visible to visitors, so
- * production should use short-lived credentials issued by a backend.
+ * Metered values are read from .env.local at build time. Values prefixed
+ * with VITE_ are embedded in the browser bundle, so only use credentials
+ * intended for browser use. Never place a provider API token or other
+ * server-side secret in these variables.
  */
-const turnUsername = import.meta.env.VITE_METERED_TURN_USERNAME as string | undefined
-const turnCredential = import.meta.env.VITE_METERED_TURN_CREDENTIAL as string | undefined
+const rtcConfigurator = async (_ctx: { signaller: any }) => {
+  const username = (import.meta.env.VITE_METERED_TURN_USERNAME ?? '').trim()
+  const credential = (
+    import.meta.env.VITE_METERED_TURN_CREDENTIAL ?? ''
+  ).trim()
 
-const rtcConfigurator = async (_ctx: { signaller: any }) => ({
-  iceServers: [
+  // Public STUN servers. These help peers discover their own public
+  // address. They are not authenticated and can be freely used.
+  const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.relay.metered.ca:80' },
-    // VITE_* values are bundled into the client. Use only short-lived or
-    // restricted TURN credentials here; production-grade issuance needs a backend.
-    ...(turnUsername && turnCredential
-      ? [
-          {
-            urls: 'turn:global.relay.metered.ca:80',
-            username: turnUsername,
-            credential: turnCredential,
-          },
-          {
-            urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-            username: turnUsername,
-            credential: turnCredential,
-          },
-          {
-            urls: 'turn:global.relay.metered.ca:443',
-            username: turnUsername,
-            credential: turnCredential,
-          },
-          {
-            urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-            username: turnUsername,
-            credential: turnCredential,
-          },
-        ]
-      : []),
-  ],
-})
+  ]
 
-// These event types are handled and, when appropriate, rebroadcast by the
-// host application. They must never be blindly relayed peer-to-peer.
+  // TURN servers relay traffic when direct P2P fails. Only add them
+  // when credentials are available.
+  if (username && credential) {
+    iceServers.push(
+      {
+        urls: 'turn:global.relay.metered.ca:80',
+        username,
+        credential,
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+        username,
+        credential,
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:443',
+        username,
+        credential,
+      },
+      {
+        urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+        username,
+        credential,
+      }
+    )
+    console.info('[SparrowAdapter] Metered TURN is configured.')
+  } else {
+    console.warn(
+      '[SparrowAdapter] Metered TURN credentials are missing. Only STUN is configured; some networks may not connect.'
+    )
+  }
+
+  return { iceServers }
+}
+
+// These event types are handled and, when appropriate, rebroadcast by
+// the host application. They must never be blindly relayed peer-to-peer.
 const HOST_HANDLED_EVENTS = new Set([
   'HELLO',
   'PLAYER_JOINED',
@@ -82,6 +94,7 @@ export class SparrowAdapter implements NetworkAdapter {
   private selfId: string | null = null
   private selfName: string | null = null
   private roomCode: RoomCode | null = null
+
   // Keep the actual host-side peer connections instead of relying on the
   // undocumented shape of hosted.connections when broadcasting messages.
   private hostConnections = new Set<any>()
@@ -89,7 +102,9 @@ export class SparrowAdapter implements NetworkAdapter {
   private hostPeerPlayerIds = new Map<any, string>()
   private activePlayerConnections = new Map<string, any>()
 
-  private messageHandlers: Array<(event: GameEvent, senderId: string) => void> = []
+  private messageHandlers: Array<
+    (event: GameEvent, senderId: string) => void
+  > = []
   private playerJoinHandlers: Array<(playerId: string) => void> = []
   private playerLeaveHandlers: Array<(playerId: string) => void> = []
 
@@ -110,8 +125,12 @@ export class SparrowAdapter implements NetworkAdapter {
           this.hostConnections.delete(connection)
           this.hostConnectionPeerIds.delete(connection)
           this.hostPeerPlayerIds.delete(connection)
-          for (const [playerId, activeConnection] of this.activePlayerConnections) {
-            if (activeConnection === connection) this.activePlayerConnections.delete(playerId)
+          for (const [
+            playerId,
+            activeConnection,
+          ] of this.activePlayerConnections) {
+            if (activeConnection === connection)
+              this.activePlayerConnections.delete(playerId)
           }
         }
       },
@@ -145,8 +164,8 @@ export class SparrowAdapter implements NetworkAdapter {
     const connection = this.joined.connection
 
     // Assign a UNIQUE guest ID so multiple guests can coexist.
-    // Combine the player name (sanitized) with a random suffix.
-    const safeName = playerName.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'guest'
+    const safeName =
+      playerName.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'guest'
     const uniqueSuffix = Math.random().toString(36).slice(2, 8)
     this.selfId = `guest-${safeName}-${uniqueSuffix}`
 
@@ -220,7 +239,8 @@ export class SparrowAdapter implements NetworkAdapter {
     }
 
     if (this.hosted) {
-      for (const connection of this.hostConnections) sendOnConnection(connection)
+      for (const connection of this.hostConnections)
+        sendOnConnection(connection)
     }
 
     if (this.joined) {
@@ -237,12 +257,18 @@ export class SparrowAdapter implements NetworkAdapter {
 
     const connection = this.activePlayerConnections.get(playerId)
     if (!connection || !this.hostConnections.has(connection)) {
-      console.warn('[SparrowAdapter] Private delivery target is not an active player:', playerId)
+      console.warn(
+        '[SparrowAdapter] Private delivery target is not an active player:',
+        playerId
+      )
       return
     }
     const channel = connection?.cable?.reliable
     if (!channel) {
-      console.warn('[SparrowAdapter] Private delivery target is not connected:', playerId)
+      console.warn(
+        '[SparrowAdapter] Private delivery target is not connected:',
+        playerId
+      )
       return
     }
     const payload = JSON.stringify(event)
@@ -262,7 +288,8 @@ export class SparrowAdapter implements NetworkAdapter {
 
   setActivePlayerPeer(playerId: string, peerId: string): void {
     const connection = [...this.hostConnections].find(
-      (candidate) => this.hostConnectionPeerIds.get(candidate) === peerId &&
+      (candidate) =>
+        this.hostConnectionPeerIds.get(candidate) === peerId &&
         this.hostPeerPlayerIds.get(candidate) === playerId
     )
     if (connection) this.activePlayerConnections.set(playerId, connection)
@@ -285,7 +312,8 @@ export class SparrowAdapter implements NetworkAdapter {
       }
     }
     if (channel.readyState === 'open') transmit()
-    else if (channel.readyState === 'connecting') channel.addEventListener('open', transmit, { once: true })
+    else if (channel.readyState === 'connecting')
+      channel.addEventListener('open', transmit, { once: true })
   }
 
   onMessage(handler: (event: GameEvent, senderId: string) => void): void {
@@ -304,7 +332,8 @@ export class SparrowAdapter implements NetworkAdapter {
   }
 
   onPlayerLeave(handler: (playerId: string) => void): void {
-    if (!this.playerLeaveHandlers.includes(handler)) this.playerLeaveHandlers.push(handler)
+    if (!this.playerLeaveHandlers.includes(handler))
+      this.playerLeaveHandlers.push(handler)
   }
 
   offPlayerLeave(handler: (playerId: string) => void): void {
@@ -380,8 +409,12 @@ export class SparrowAdapter implements NetworkAdapter {
       this.hostConnections.delete(connection)
       this.hostConnectionPeerIds.delete(connection)
       this.hostPeerPlayerIds.delete(connection)
-      for (const [playerId, activeConnection] of this.activePlayerConnections) {
-        if (activeConnection === connection) this.activePlayerConnections.delete(playerId)
+      for (const [
+        playerId,
+        activeConnection,
+      ] of this.activePlayerConnections) {
+        if (activeConnection === connection)
+          this.activePlayerConnections.delete(playerId)
       }
       this.playerLeaveHandlers.forEach((h) => h(peerId))
     }
