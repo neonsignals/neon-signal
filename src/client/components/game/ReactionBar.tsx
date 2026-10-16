@@ -1,0 +1,25 @@
+import './ReactionBar.css'
+
+const REACTIONS = ['😂', '😱', '🔥', '👏', '💀', '🧠', '🤯', '⚡']
+
+type ReactionBarProps = {
+  onSend: (emoji: string) => void
+}
+
+export function ReactionBar({ onSend }: ReactionBarProps) {
+  return (
+    <div className="reaction-bar" aria-label="Send a reaction">
+      {REACTIONS.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          className="reaction-btn"
+          onClick={() => onSend(emoji)}
+          aria-label={`React with ${emoji}`}
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  )
+}

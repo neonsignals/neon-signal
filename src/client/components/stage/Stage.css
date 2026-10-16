@@ -1,0 +1,114 @@
+.stage-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+
+  /* Stage background image */
+  position: relative;
+  padding: var(--space-6) var(--space-4);
+  border-radius: var(--radius-xl);
+  background-image:
+    radial-gradient(
+      ellipse at center,
+      rgba(10, 14, 39, 0.4) 0%,
+      rgba(10, 14, 39, 0.88) 80%
+    ),
+    url('/backgrounds/stage.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(0, 245, 212, 0.12);
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.6);
+}
+
+.stage-leaderboard {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  justify-content: center;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+}
+
+.stage-table {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60%;
+  height: 60%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.4s ease;
+}
+
+.stage-table-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(35, 41, 72, 0.9) 0%,
+    rgba(26, 31, 58, 0.85) 70%,
+    rgba(10, 14, 39, 0.9) 100%
+  );
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--phase-color, var(--color-cyan));
+  box-shadow: 0 0 40px var(--phase-color, rgba(0, 245, 212, 0.3)),
+    inset 0 0 60px rgba(0, 245, 212, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-6);
+  transition: border-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.stage-table-label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.3em;
+  color: var(--phase-color, var(--color-cyan));
+  text-shadow: 0 0 12px var(--phase-color, var(--color-cyan));
+  margin-bottom: var(--space-2);
+  transition: color 0.4s ease, text-shadow 0.4s ease;
+}
+
+.stage-table-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* On wide screens, place leaderboard beside the stage */
+@media (min-width: 900px) {
+  .stage-wrapper {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--space-8);
+    padding: var(--space-8);
+  }
+
+  .stage-leaderboard {
+    max-width: 320px;
+    flex-shrink: 0;
+    order: 2;
+  }
+
+  .stage {
+    flex-shrink: 0;
+    order: 1;
+    max-width: 520px;
+  }
+}

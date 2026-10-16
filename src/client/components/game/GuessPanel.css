@@ -1,0 +1,234 @@
+.guess-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.guess-panel-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--color-amber);
+  text-shadow: 0 0 10px var(--color-amber);
+  margin: 0;
+}
+
+.guess-panel-subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+.guess-panel-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin: var(--space-2) 0 0;
+}
+
+.guess-panel-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: center;
+  margin-bottom: var(--space-2);
+}
+
+.guess-panel-target {
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-bright);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.guess-panel-target:hover {
+  border-color: var(--color-amber);
+  color: var(--color-text);
+}
+
+.guess-panel-target-active {
+  background: var(--color-amber);
+  border-color: var(--color-amber);
+  color: var(--color-bg);
+}
+
+.guess-panel-digits {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.guess-panel-digit {
+  width: 48px;
+  height: 60px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  border: 2px solid var(--color-amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-amber);
+  box-shadow: 0 0 12px rgba(255, 183, 3, 0.35);
+}
+
+.guess-panel-pad {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  max-width: 260px;
+  width: 100%;
+}
+
+.guess-panel-key {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-bright);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.guess-panel-key:hover {
+  background: var(--color-surface-raised);
+  border-color: var(--color-amber);
+}
+
+.guess-panel-key:active {
+  transform: scale(0.94);
+}
+
+.guess-panel-key-action {
+  color: var(--color-magenta);
+  border-color: var(--color-magenta);
+}
+
+.guess-panel-submit {
+  margin-top: var(--space-2);
+  padding: 12px 28px;
+  border-radius: var(--radius-md);
+  background: var(--color-amber);
+  color: var(--color-bg);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 16px rgba(255, 183, 3, 0.5);
+  transition: transform 0.15s ease;
+}
+
+.guess-panel-submit:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+
+.guess-panel-submit:disabled {
+  background: var(--color-surface);
+  color: var(--color-text-dim);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.guess-panel-no-more {
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.guess-panel-history {
+  margin-top: var(--space-4);
+  width: 100%;
+  max-width: 400px;
+}
+
+.guess-panel-history-title {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin: 0 0 var(--space-2);
+}
+
+.guess-panel-history ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.guess-panel-history-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.guess-panel-history-target {
+  color: var(--color-text);
+  text-align: left;
+}
+
+.guess-panel-history-code {
+  font-family: var(--font-mono);
+  color: var(--color-amber);
+  font-weight: 700;
+}
+
+.guess-panel-history-result {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.guess-panel-hit-pos {
+  color: var(--color-green);
+  font-weight: 700;
+}
+
+.guess-panel-hit-digit {
+  color: var(--color-amber);
+  font-weight: 700;
+}
+
+.guess-panel-hit-none {
+  color: var(--color-text-dim);
+}
+
+.guess-panel-history-points {
+  font-family: var(--font-mono);
+  color: var(--color-cyan);
+  font-weight: 700;
+  min-width: 30px;
+  text-align: right;
+}
+
+.guess-panel-legend {
+  font-size: 10px;
+  color: var(--color-text-dim);
+  margin: 8px 0 0;
+  font-style: italic;
+}

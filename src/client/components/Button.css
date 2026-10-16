@@ -1,0 +1,66 @@
+.btn {
+  min-height: var(--touch-min);
+  padding: 12px 22px;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+/* Only animate hover on devices that truly hover (desktop, not touch) */
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled) {
+    transform: scale(1.02);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: rgba(0, 245, 212, 0.08);
+  }
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  background: var(--color-surface);
+  color: var(--color-text-dim);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Variants */
+
+.btn-primary {
+  background: var(--color-cyan);
+  color: var(--color-bg);
+  box-shadow: 0 0 16px rgba(0, 245, 212, 0.5);
+}
+
+.btn-secondary {
+  background: var(--color-magenta);
+  color: white;
+  box-shadow: 0 0 16px rgba(255, 46, 99, 0.5);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-cyan);
+  border: 1px solid var(--color-cyan);
+}
+
+.btn-danger {
+  background: var(--color-red);
+  color: white;
+  box-shadow: 0 0 16px rgba(255, 51, 102, 0.5);
+}

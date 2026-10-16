@@ -1,0 +1,9 @@
+.player-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.player-ring > div {
+  pointer-events: auto;
+}

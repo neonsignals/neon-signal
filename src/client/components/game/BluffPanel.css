@@ -1,0 +1,120 @@
+.bluff-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.bluff-panel-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--color-magenta);
+  text-shadow: 0 0 10px var(--color-magenta);
+  margin: 0;
+}
+
+.bluff-panel-subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+.bluff-panel-instruction {
+  font-size: 13px;
+  color: var(--color-text);
+  max-width: 340px;
+  margin: var(--space-2) 0;
+  line-height: 1.4;
+}
+
+.bluff-panel-input-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+}
+
+.bluff-panel-input {
+  width: 100%;
+  padding: 14px 60px 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 2px solid var(--color-border-bright);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  transition: border-color 0.15s ease;
+}
+
+.bluff-panel-input:focus {
+  outline: none;
+  border-color: var(--color-magenta);
+  box-shadow: 0 0 12px rgba(255, 46, 99, 0.3);
+}
+
+.bluff-panel-counter {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.bluff-panel-submit {
+  margin-top: var(--space-2);
+  min-width: 200px;
+}
+
+.bluff-panel-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.bluff-panel-submitted {
+  animation: bluff-pulse 1.5s ease-in-out infinite;
+}
+
+.bluff-panel-submitted .bluff-panel-title {
+  color: var(--color-green);
+  text-shadow: 0 0 10px var(--color-green);
+}
+
+.bluff-panel-mybluff {
+  font-family: var(--font-body);
+  font-size: 16px;
+  color: var(--color-magenta);
+  font-style: italic;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--color-magenta);
+  background: rgba(255, 46, 99, 0.08);
+  border-radius: var(--radius-sm);
+  max-width: 340px;
+}
+
+.bluff-panel-mybluff-empty {
+  color: var(--color-text-muted);
+  border-left-color: var(--color-text-muted);
+  background: rgba(90, 96, 128, 0.08);
+}
+
+@keyframes bluff-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bluff-panel-submitted {
+    animation: none;
+  }
+}

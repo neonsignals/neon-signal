@@ -1,0 +1,64 @@
+.landing {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-12);
+  padding: var(--space-6);
+
+  /* Background image with dark overlay */
+  background-image:
+    radial-gradient(
+      ellipse at center,
+      rgba(10, 14, 39, 0.55) 0%,
+      rgba(10, 14, 39, 0.9) 80%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(10, 14, 39, 0.5) 0%,
+      rgba(10, 14, 39, 0.85) 100%
+    ),
+    url('/backgrounds/landing.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+.landing-header {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.landing-title {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 8vw, 56px);
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: var(--color-cyan);
+  text-shadow: 0 0 20px var(--color-cyan),
+    0 0 40px rgba(0, 245, 212, 0.5),
+    0 4px 24px rgba(0, 0, 0, 0.8);
+  margin-bottom: var(--space-2);
+}
+
+.landing-tagline {
+  font-size: 14px;
+  color: var(--color-text);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+}
+
+.landing-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 320px;
+  position: relative;
+  z-index: 1;
+}

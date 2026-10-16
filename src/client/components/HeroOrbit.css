@@ -1,0 +1,134 @@
+.hero-orbit-wrap {
+  position: relative;
+  width: min(94vw, 620px);
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  flex-shrink: 0;
+}
+
+.hero-orbit-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+  pointer-events: none;
+}
+
+/* ---- Ring rotation ---- */
+.hero-orbit-text-group {
+  transform-origin: 300px 300px;
+  animation: hero-spin 60s linear infinite;
+}
+
+.hero-orbit-icon-group {
+  transform-origin: 300px 300px;
+  animation: hero-spin-reverse 90s linear infinite;
+}
+
+.hero-orbit-text {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  animation: hero-text-pulse 4s ease-in-out infinite;
+}
+
+.hero-orbit-icon {
+  font-size: 34px;
+  animation: hero-icon-pulse 3s ease-in-out infinite;
+  user-select: none;
+}
+
+/* ---- Center content ---- */
+.hero-orbit-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 22%;
+  z-index: 2;
+  gap: 18px;
+}
+
+/* ---- Keyframes ---- */
+@keyframes hero-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hero-spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes hero-text-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(0, 245, 212, 0.95))
+      drop-shadow(0 0 14px rgba(255, 46, 99, 0.55));
+  }
+  33% {
+    filter: drop-shadow(0 0 6px rgba(255, 46, 99, 0.95))
+      drop-shadow(0 0 16px rgba(255, 183, 3, 0.6));
+  }
+  66% {
+    filter: drop-shadow(0 0 6px rgba(255, 183, 3, 0.95))
+      drop-shadow(0 0 16px rgba(0, 245, 212, 0.6));
+  }
+}
+
+@keyframes hero-icon-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(0, 245, 212, 0.65));
+    opacity: 0.85;
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(255, 46, 99, 0.95));
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-orbit-text-group,
+  .hero-orbit-icon-group,
+  .hero-orbit-text,
+  .hero-orbit-icon {
+    animation: none;
+  }
+}
+
+/* ---- Tablet ---- */
+@media (max-width: 900px) {
+  .hero-orbit-text {
+    font-size: 22px;
+  }
+  .hero-orbit-icon {
+    font-size: 30px;
+  }
+  .hero-orbit-center {
+    padding: 0 20%;
+    gap: 14px;
+  }
+}
+
+/* ---- Phone ---- */
+@media (max-width: 480px) {
+  .hero-orbit-text {
+    font-size: 18px;
+  }
+  .hero-orbit-icon {
+    font-size: 24px;
+  }
+  .hero-orbit-center {
+    padding: 0 18%;
+    gap: 12px;
+  }
+}

@@ -1,0 +1,14 @@
+.beast {
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  border: 2px solid var(--color-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.beast-emoji {
+  line-height: 1;
+  user-select: none;
+}

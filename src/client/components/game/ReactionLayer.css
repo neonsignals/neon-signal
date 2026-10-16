@@ -1,0 +1,61 @@
+.reaction-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1400;
+  overflow: hidden;
+}
+
+.reaction-float {
+  position: absolute;
+  bottom: 90px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  animation: reaction-rise 2.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+}
+
+.reaction-emoji {
+  font-size: 40px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+
+.reaction-name {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  background: rgba(10, 14, 39, 0.75);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+}
+
+@keyframes reaction-rise {
+  0% {
+    transform: translateX(-50%) translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    transform: translateX(-50%) translateY(-20px) scale(1.15);
+    opacity: 1;
+  }
+  70% {
+    transform: translateX(-50%) translateY(-260px) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) translateY(-380px) scale(0.9);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction-float {
+    animation: none;
+    opacity: 0;
+  }
+}

@@ -1,0 +1,108 @@
+.peek-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  text-align: center;
+}
+
+.peek-panel-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--color-purple);
+  text-shadow: 0 0 10px var(--color-purple);
+  margin: 0;
+}
+
+.peek-panel-subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  margin: 0;
+}
+
+.peek-panel-waiting {
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding: var(--space-6) 0;
+  font-size: 14px;
+}
+
+.peek-panel-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.peek-panel-who {
+  font-size: 14px;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.peek-panel-who strong {
+  color: var(--color-purple);
+  text-shadow: 0 0 8px var(--color-purple);
+}
+
+.peek-panel-digits {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.peek-panel-digit {
+  width: 48px;
+  height: 60px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  border: 2px solid var(--color-border-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.peek-panel-digit-revealed {
+  border-color: var(--color-purple);
+  color: var(--color-purple);
+  box-shadow: 0 0 16px rgba(157, 78, 221, 0.6),
+    0 0 32px rgba(157, 78, 221, 0.3);
+  animation: peek-reveal-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes peek-reveal-pop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.peek-panel-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .peek-panel-digit-revealed {
+    animation: none;
+  }
+}

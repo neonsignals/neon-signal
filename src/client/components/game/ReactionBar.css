@@ -1,0 +1,50 @@
+.reaction-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(10, 14, 39, 0.92);
+  border: 1px solid var(--color-border-bright);
+  border-radius: 9999px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.55),
+    0 0 24px rgba(0, 245, 212, 0.15);
+  z-index: 1600;
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.reaction-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.reaction-btn {
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .reaction-btn:hover {
+    background: var(--color-surface-raised);
+    transform: scale(1.15);
+  }
+}
+
+.reaction-btn:active {
+  transform: scale(0.85);
+}
