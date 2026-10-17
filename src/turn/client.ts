@@ -28,11 +28,39 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
     return cache.iceServers
   }
 
-  const qs = provider === 'auto' ? '' : `?provider=${provider}`
-  const res = await fetch(`/api/turn${qs}`)
+  // FIXED: always pass the provider to the server.
+  //   provider=metered  → Metered only
+  //   provider=cloudflare → Cloudflare only
+  //   provider=auto     → server tries primary, falls back on failure
+  // Sending NO param means "server DEFAULT_TURN_PROVIDER, single provider",
+  // which is not what 'auto' is supposed to mean.
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+
+  let res: Response
+  try {
+    res = await fetch(`/api/turn?provider=${provider}`, {
+      signal: controller.signal,
+      headers: { accept: 'application/json' },
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+
   if (!res.ok) throw new Error(`turn endpoint ${res.status}`)
 
+  // FIXED: check content-type before .json() so a stray HTML page gives a
+  // clear error instead of "Unexpected token '<'".
+  const ct = res.headers.get('content-type') ?? ''
+  if (!ct.includes('application/json')) {
+    throw new Error(`turn endpoint returned non-JSON (content-type: ${ct || 'none'})`)
+  }
+
   const data = (await res.json()) as { iceServers: RTCIceServer[] }
+  if (!Array.isArray(data.iceServers) || data.iceServers.length === 0) {
+    throw new Error('turn endpoint returned no iceServers')
+  }
+
   cache = { at: Date.now(), provider, iceServers: data.iceServers }
   return data.iceServers
 }
