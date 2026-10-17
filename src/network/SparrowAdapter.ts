@@ -5,58 +5,71 @@ import type { GameEvent, RoomCode } from './types'
 /**
  * ICE configuration for Sparrow-RTC.
  *
- * Metered values are read from .env.local at build time. Values prefixed
- * with VITE_ are embedded in the browser bundle, so only use credentials
- * intended for browser use. Never place a provider API token or other
- * server-side secret in these variables.
+ * This fetches ICE servers from our own /api/turn endpoint, which
+ * decides which TURN provider to use (Metered primary, Cloudflare
+ * fallback) and returns fresh credentials.
+ *
+ * Benefits:
+ *   • Real credentials never appear in the browser bundle
+ *   • Provider switching is done in one place — server-side
+ *   • Works identically on localhost (via Vite middleware) and in
+ *     production (via Cloudflare Pages Functions)
+ *
+ * If the endpoint is unreachable, we fall back to public Google STUN
+ * servers so at least same-network play still works.
  */
 const rtcConfigurator = async (_ctx: { signaller: any }) => {
-  const username = (import.meta.env.VITE_METERED_TURN_USERNAME ?? '').trim()
-  const credential = (
-    import.meta.env.VITE_METERED_TURN_CREDENTIAL ?? ''
-  ).trim()
-
-  // Public STUN servers. These help peers discover their own public
-  // address. They are not authenticated and can be freely used.
-  const iceServers: RTCIceServer[] = [
+  const fallbackIceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun.relay.metered.ca:80' },
   ]
 
-  // TURN servers relay traffic when direct P2P fails. Only add them
-  // when credentials are available.
-  if (username && credential) {
-    iceServers.push(
-      {
-        urls: 'turn:global.relay.metered.ca:80',
-        username,
-        credential,
-      },
-      {
-        urls: 'turn:global.relay.metered.ca:80?transport=tcp',
-        username,
-        credential,
-      },
-      {
-        urls: 'turn:global.relay.metered.ca:443',
-        username,
-        credential,
-      },
-      {
-        urls: 'turns:global.relay.metered.ca:443?transport=tcp',
-        username,
-        credential,
-      }
-    )
-    console.info('[SparrowAdapter] Metered TURN is configured.')
-  } else {
-    console.warn(
-      '[SparrowAdapter] Metered TURN credentials are missing. Only STUN is configured; some networks may not connect.'
-    )
-  }
+  try {
+    // `provider=auto` tells the server to try its primary provider,
+    // and if that fails, automatically fall back to the others.
+    const response = await fetch('/api/turn?provider=auto')
 
-  return { iceServers }
+    if (!response.ok) {
+      console.warn(
+        '[SparrowAdapter] /api/turn returned',
+        response.status,
+        '— using STUN only.'
+      )
+      return { iceServers: fallbackIceServers }
+    }
+
+    const data = (await response.json()) as {
+      iceServers?: RTCIceServer[]
+      provider?: string
+      failures?: string[]
+    }
+
+    if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+      console.info(
+        '[SparrowAdapter] Loaded ICE servers from /api/turn (provider:',
+        data.provider ?? 'unknown',
+        ')'
+      )
+      if (data.failures && data.failures.length > 0) {
+        console.warn(
+          '[SparrowAdapter] Some TURN providers failed:',
+          data.failures
+        )
+      }
+      return { iceServers: data.iceServers }
+    }
+
+    console.warn(
+      '[SparrowAdapter] /api/turn returned no iceServers — using STUN only.'
+    )
+    return { iceServers: fallbackIceServers }
+  } catch (err) {
+    console.warn(
+      '[SparrowAdapter] Could not reach /api/turn — using STUN only.',
+      err
+    )
+    return { iceServers: fallbackIceServers }
+  }
 }
 
 // These event types are handled and, when appropriate, rebroadcast by

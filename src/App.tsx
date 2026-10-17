@@ -193,6 +193,7 @@ function App() {
   const lastPopRoundRef = useRef<number>(0)
   const lastShakeRoundRef = useRef<number>(0)
   const lastReactionAtRef = useRef<number>(0)
+  const sentReactionIdsRef = useRef<Set<string>>(new Set())
 
   const {
     roomCode,
@@ -234,6 +235,7 @@ function App() {
   const pendingPeerByPlayerRef = useRef<Record<string, string>>({})
   const phaseDeadlineAtRef = useRef<number | null>(phaseDeadlineAt)
   const handledPhaseKeyRef = useRef<string | null>(null)
+  const isSpectatorRef = useRef<boolean>(false)
 
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { gameStartedRef.current = gameStarted }, [gameStarted])
@@ -253,6 +255,9 @@ function App() {
   useEffect(() => { spectatorsRef.current = spectators }, [spectators])
   useEffect(() => { heldPlayersRef.current = heldPlayers }, [heldPlayers])
   useEffect(() => { phaseDeadlineAtRef.current = phaseDeadlineAt }, [phaseDeadlineAt])
+  useEffect(() => {
+    isSpectatorRef.current = screen === 'spectator'
+  }, [screen])
 
   useEffect(() => {
     setMyRejoinCode(getOrCreateToken())
@@ -263,8 +268,9 @@ function App() {
     setShakeTrigger((n) => n + 1)
   }
 
-  // Auto-rejoin on refresh
+  // Auto-rejoin on refresh — skipped if the user is in spectator mode
   useEffect(() => {
+    if (isSpectatorRef.current) return
     const saved = loadSession()
     if (!saved) return
     if (saved.isHost) {
@@ -425,6 +431,37 @@ function App() {
     setShowIntro(true)
   }, [previewPhase, roundNumber, gameStarted, screen])
 
+  function resetGameStateLocally() {
+    setGameStarted(false)
+    gameStartedRef.current = false
+    setPhaseDeadlineAt(null)
+    phaseDeadlineAtRef.current = null
+    setRoundNumber(1)
+    roundNumberRef.current = 1
+    setLockedPlayers([])
+    lockedPlayersRef.current = []
+    setCodesByPlayer({})
+    codesByPlayerRef.current = {}
+    setMyCode(null)
+    setMyPeek(null)
+    setBluffs({})
+    bluffsRef.current = {}
+    setBluffedPlayers([])
+    bluffedPlayersRef.current = []
+    setChallenges({})
+    challengesRef.current = {}
+    setGuesses({})
+    guessesRef.current = {}
+    setScores({})
+    scoresRef.current = {}
+    setRoundDeltas({})
+    setChallengeResults([])
+    handledPhaseKeyRef.current = null
+    setHeldPlayers([])
+    heldPlayersRef.current = []
+    clearAll()
+  }
+
   function computeAndBroadcastScores() {
     const isDouble = DOUBLE_ROUNDS.includes(roundNumberRef.current)
     const multiplier = isDouble ? 2 : 1
@@ -520,9 +557,6 @@ function App() {
     return Array.from({ length: 3 }, () => String(1 + Math.floor(Math.random() * 9))).join('')
   }
 
-  // The host owns the phase clock, so a hidden/unmounted panel can never
-  // pause the game. A per-round/phase guard prevents panel and global timers
-  // from advancing the same phase twice.
   function advanceCurrentPhase() {
     if (selfIdRef.current !== 'host') return
     const phase = previewPhaseRef.current
@@ -630,11 +664,9 @@ function App() {
 
   useEffect(() => {
     if (!gameStarted || selfId !== 'host' || phaseDeadlineAt === null) return
-    // Leave a short grace window for the last in-flight submission to reach the host.
     const delay = Math.max(0, phaseDeadlineAt - Date.now()) + 750
     const timer = setTimeout(() => advanceCurrentPhase(), delay)
     return () => clearTimeout(timer)
-    // State is read from refs by advanceCurrentPhase to avoid stale submissions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameStarted, selfId, previewPhase, roundNumber, phaseDeadlineAt])
 
@@ -653,6 +685,22 @@ function App() {
 
       if (event.type === 'GAME_START') {
         if (selfIdRef.current === 'host' && from !== 'host') return
+        // Spectator path — accept whenever we're currently on the spectator
+        // screen, even if the ref hasn't caught up yet.
+        if (isSpectatorRef.current || screen === 'spectator') {
+          const spectatorDeadlineAt =
+            event.deadlineAt ?? Date.now() + PHASE_DURATION_MS.lock
+          setGameStarted(true)
+          gameStartedRef.current = true
+          setSpectatorJoined(true)
+          setPreviewPhase('lock')
+          previewPhaseRef.current = 'lock'
+          setRoundNumber(1)
+          roundNumberRef.current = 1
+          setPhaseDeadlineAt(spectatorDeadlineAt)
+          phaseDeadlineAtRef.current = spectatorDeadlineAt
+          return
+        }
         const deadlineAt = event.deadlineAt ?? Date.now() + PHASE_DURATION_MS.lock
         setGameStarted(true)
         gameStartedRef.current = true
@@ -690,12 +738,59 @@ function App() {
 
       if (event.type === 'PHASE_CHANGE') {
         if (selfIdRef.current === 'host' && from !== 'host') return
+
+        // Spectator branch — also promote to gameStarted if a real phase
+        // arrives and we somehow missed GAME_START.
+        if (isSpectatorRef.current || screen === 'spectator') {
+          if (event.phase === 'lobby') {
+            setGameStarted(false)
+            gameStartedRef.current = false
+            setSpectatorJoined(false)
+            return
+          }
+          if (event.phase === 'game-over') {
+            phaseDeadlineAtRef.current = null
+            setPhaseDeadlineAt(null)
+            if (!gameStartedRef.current) {
+              setGameStarted(true)
+              gameStartedRef.current = true
+              setSpectatorJoined(true)
+            }
+            return
+          }
+          if (!gameStartedRef.current) {
+            setGameStarted(true)
+            gameStartedRef.current = true
+            setSpectatorJoined(true)
+          }
+          const sPhase = event.phase as Phase
+          const sDeadline = event.deadlineAt ?? Date.now() + PHASE_DURATION_MS[sPhase]
+          setPreviewPhase(sPhase)
+          previewPhaseRef.current = sPhase
+          setPhaseDeadlineAt(sDeadline)
+          phaseDeadlineAtRef.current = sDeadline
+          if (event.roundLabel) {
+            const sm = event.roundLabel.match(/^R(\d+)\//)
+            const sRn = sm ? parseInt(sm[1], 5) : roundNumberRef.current
+            setRoundNumber(sRn)
+            roundNumberRef.current = sRn
+          }
+          return
+        }
+
+        if (event.phase === 'lobby') {
+          resetGameStateLocally()
+          setScreen('lobby')
+          return
+        }
+
         if (event.phase === 'game-over') {
           phaseDeadlineAtRef.current = null
           setPhaseDeadlineAt(null)
           setScreen('game-over')
           return
         }
+
         const phase = event.phase as Phase
         const m = event.roundLabel.match(/^R(\d+)\//)
         const rn = m ? parseInt(m[1], 5) : roundNumberRef.current
@@ -711,26 +806,42 @@ function App() {
       }
 
       // ---- Reaction ----
+      // Dedup with a stable id so the sender's own optimistic add doesn't
+      // double-render when the host echoes it back. Host rebroadcast is
+      // authoritative, so all players accept it.
       if (event.type === 'REACTION') {
+        const reactionId =
+          (event as { id?: string }).id ??
+          `${event.fromId}-${event.emoji}-${Date.now()}`
+
         if (selfIdRef.current === 'host') {
           const mappedId = peerToPlayerRef.current[from]
-          if (from !== 'host' && mappedId !== event.fromId) return
+          const senderIsHost = from === 'host'
           const senderIsPlayer = playersRef.current.some((p) => p.id === event.fromId)
-          const senderIsSpectator = spectatorsRef.current.some((p) => p.id === event.fromId)
+          const senderIsSpectator = spectatorsRef.current.some(
+            (p) => p.id === event.fromId
+          )
+          if (!senderIsHost && mappedId !== event.fromId) return
           if (senderIsPlayer && activePeerByPlayerRef.current[event.fromId] !== from) return
           if (!senderIsPlayer && !senderIsSpectator) return
-          send(event)
+
+          send({ ...event, id: reactionId } as GameEvent)
         } else if (from !== 'host') {
           return
         }
+
+        if (sentReactionIdsRef.current.has(reactionId)) {
+          sentReactionIdsRef.current.delete(reactionId)
+          return
+        }
+
         const senderName =
           playersRef.current.find((p) => p.id === event.fromId)?.name ??
           spectatorsRef.current.find((p) => p.id === event.fromId)?.name ??
           '???'
-        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         setReactions((prev) => [
           ...prev.slice(-19),
-          { id, emoji: event.emoji, fromName: senderName },
+          { id: reactionId, emoji: event.emoji, fromName: senderName },
         ])
         return
       }
@@ -738,12 +849,23 @@ function App() {
       if (event.type === 'SPECTATOR_JOIN') {
         const s = event.spectator
         if (selfIdRef.current === 'host') {
-          if (s.role !== 'spectator' || !/^spec-[a-z0-9]+$/i.test(s.id)) return
+          if (s.role !== 'spectator') return
+          if (!/^spec-[a-z0-9]+$/i.test(s.id)) return
           if (playersRef.current.some((p) => p.id === s.id)) return
+          if (pendingPeerByPlayerRef.current[s.id]) return
+
           const existingPeerPlayer = peerToPlayerRef.current[from]
           if (existingPeerPlayer && existingPeerPlayer !== s.id) return
-          if (spectatorsRef.current.some((existing) => existing.id === s.id) && existingPeerPlayer !== s.id) return
-          peerToPlayerRef.current[from] = s.id
+
+          if (existingPeerPlayer !== s.id) {
+            peerToPlayerRef.current[from] = s.id
+            // Register the spectator peer with the network layer so that
+            // subsequent host broadcasts (GAME_START, PHASE_CHANGE,
+            // ROUND_COMPLETE, …) actually reach this peer.
+            network.setActivePlayerPeer(s.id, from)
+          }
+          // Fall through on duplicate joins too — the client retries, and
+          // each retry should get a fresh GAME_STATE_SYNC back.
         }
         const nextSpectators = spectatorsRef.current.some((x) => x.id === s.id)
           ? spectatorsRef.current
@@ -795,6 +917,110 @@ function App() {
         }
         return
       }
+
+      // ---- Shared events: both players and spectators handle these ----
+
+      if (event.type === 'ROUND_COMPLETE') {
+        if (from !== 'host') return
+        setScores(event.scores)
+        scoresRef.current = event.scores
+        setRoundDeltas(event.deltas)
+        setChallengeResults(event.challengeResults)
+        return
+      }
+
+      if (event.type === 'GAME_STATE_SYNC') {
+        setGameStarted(event.gameStarted)
+        gameStartedRef.current = event.gameStarted
+        setPreviewPhase(event.phase as Phase)
+        previewPhaseRef.current = event.phase as Phase
+        setPhaseDeadlineAt(event.deadlineAt ?? null)
+        phaseDeadlineAtRef.current = event.deadlineAt ?? null
+        setLockedPlayers(event.lockedPlayers)
+        lockedPlayersRef.current = event.lockedPlayers
+        setBluffedPlayers(event.bluffedPlayers)
+        bluffedPlayersRef.current = event.bluffedPlayers
+        setBluffs(event.bluffs)
+        bluffsRef.current = event.bluffs
+        setChallenges(event.challenges ?? {})
+        challengesRef.current = event.challenges ?? {}
+        setRoundNumber(event.roundNumber ?? 1)
+        roundNumberRef.current = event.roundNumber ?? 1
+        setScores(event.scores ?? {})
+        scoresRef.current = event.scores ?? {}
+        if (Array.isArray(event.spectators)) {
+          setSpectators(event.spectators)
+          spectatorsRef.current = event.spectators
+        }
+
+        if (Array.isArray(event.players) && event.players.length > 0) {
+          setPlayers(event.players)
+          playersRef.current = event.players
+        }
+
+        if (isSpectatorRef.current) {
+          setSpectatorJoined(true)
+          return
+        }
+
+        if (event.gameStarted) {
+          clearAll()
+          setScreen('stage')
+          setJoinedMidRound(true)
+        }
+        return
+      }
+
+      if (event.type === 'ROSTER_SYNC') {
+        playersRef.current = event.players
+        heldPlayersRef.current = event.heldPlayers ?? []
+        setPlayers(event.players)
+        setHeldPlayers(event.heldPlayers ?? [])
+        return
+      }
+
+      if (event.type === 'ROUND_SNAPSHOT') {
+        setPlayers(event.players)
+        playersRef.current = event.players
+        setHeldPlayers(event.heldPlayers ?? [])
+        heldPlayersRef.current = event.heldPlayers ?? []
+        setSpectators(event.spectators ?? [])
+        spectatorsRef.current = event.spectators ?? []
+        setGameStarted(event.gameStarted)
+        gameStartedRef.current = event.gameStarted
+        setPhaseDeadlineAt(event.deadlineAt ?? null)
+        phaseDeadlineAtRef.current = event.deadlineAt ?? null
+        setRoundNumber(event.roundNumber ?? 1)
+        roundNumberRef.current = event.roundNumber ?? 1
+        setPreviewPhase(event.phase as Phase)
+        previewPhaseRef.current = event.phase as Phase
+        setLockedPlayers(event.lockedPlayers ?? [])
+        lockedPlayersRef.current = event.lockedPlayers ?? []
+        setBluffedPlayers(event.bluffedPlayers ?? [])
+        bluffedPlayersRef.current = event.bluffedPlayers ?? []
+        setBluffs(event.bluffs ?? {})
+        bluffsRef.current = event.bluffs ?? {}
+        setChallenges(event.challenges ?? {})
+        challengesRef.current = event.challenges ?? {}
+        const snapshotCodes = event.phase === 'reveal' ? (event.codesByPlayer ?? {}) : {}
+        setCodesByPlayer(snapshotCodes)
+        codesByPlayerRef.current = snapshotCodes
+        setScores(event.scores ?? {})
+        scoresRef.current = event.scores ?? {}
+
+        if (isSpectatorRef.current) {
+          return
+        }
+
+        if (event.gameStarted && screen !== 'reason' && screen !== 'waiting') {
+          clearAll()
+          setScreen('stage')
+        }
+        return
+      }
+
+      // ---- Everything below this line is for players only ----
+      if (isSpectatorRef.current) return
 
       if (event.type === 'LOCK_SUBMITTED') {
         if (selfIdRef.current !== 'host' || previewPhaseRef.current !== 'lock') return
@@ -927,15 +1153,6 @@ function App() {
         return
       }
 
-      if (event.type === 'ROUND_COMPLETE') {
-        if (from !== 'host') return
-        setScores(event.scores)
-        scoresRef.current = event.scores
-        setRoundDeltas(event.deltas)
-        setChallengeResults(event.challengeResults)
-        return
-      }
-
       if (event.type === 'PEEK_SHARED') {
         if (selfIdRef.current === 'host') {
           const mappedId = peerToPlayerRef.current[from]
@@ -956,91 +1173,6 @@ function App() {
           digitIndex: event.digitIndex,
           digit: event.digit,
         })
-        return
-      }
-
-      if (event.type === 'GAME_STATE_SYNC') {
-        setGameStarted(event.gameStarted)
-        gameStartedRef.current = event.gameStarted
-        setPreviewPhase(event.phase as Phase)
-        previewPhaseRef.current = event.phase as Phase
-        setPhaseDeadlineAt(event.deadlineAt ?? null)
-        phaseDeadlineAtRef.current = event.deadlineAt ?? null
-        setLockedPlayers(event.lockedPlayers)
-        lockedPlayersRef.current = event.lockedPlayers
-        setBluffedPlayers(event.bluffedPlayers)
-        bluffedPlayersRef.current = event.bluffedPlayers
-        setBluffs(event.bluffs)
-        bluffsRef.current = event.bluffs
-        setChallenges(event.challenges ?? {})
-        challengesRef.current = event.challenges ?? {}
-        setRoundNumber(event.roundNumber ?? 1)
-        roundNumberRef.current = event.roundNumber ?? 1
-        setScores(event.scores ?? {})
-        scoresRef.current = event.scores ?? {}
-        if (Array.isArray(event.spectators)) {
-          setSpectators(event.spectators)
-          spectatorsRef.current = event.spectators
-        }
-
-        if (Array.isArray(event.players) && event.players.length > 0) {
-          setPlayers(event.players)
-          playersRef.current = event.players
-        }
-
-        if (screen === 'spectator') {
-          setSpectatorJoined(true)
-          return
-        }
-
-        if (event.gameStarted) {
-          clearAll()
-          setScreen('stage')
-          setJoinedMidRound(true)
-        }
-        return
-      }
-
-      if (event.type === 'ROSTER_SYNC') {
-        playersRef.current = event.players
-        heldPlayersRef.current = event.heldPlayers ?? []
-        setPlayers(event.players)
-        setHeldPlayers(event.heldPlayers ?? [])
-        return
-      }
-
-      if (event.type === 'ROUND_SNAPSHOT') {
-        setPlayers(event.players)
-        playersRef.current = event.players
-        setHeldPlayers(event.heldPlayers ?? [])
-        heldPlayersRef.current = event.heldPlayers ?? []
-        setSpectators(event.spectators ?? [])
-        spectatorsRef.current = event.spectators ?? []
-        setGameStarted(event.gameStarted)
-        gameStartedRef.current = event.gameStarted
-        setPhaseDeadlineAt(event.deadlineAt ?? null)
-        phaseDeadlineAtRef.current = event.deadlineAt ?? null
-        setRoundNumber(event.roundNumber ?? 1)
-        roundNumberRef.current = event.roundNumber ?? 1
-        setPreviewPhase(event.phase as Phase)
-        previewPhaseRef.current = event.phase as Phase
-        setLockedPlayers(event.lockedPlayers ?? [])
-        lockedPlayersRef.current = event.lockedPlayers ?? []
-        setBluffedPlayers(event.bluffedPlayers ?? [])
-        bluffedPlayersRef.current = event.bluffedPlayers ?? []
-        setBluffs(event.bluffs ?? {})
-        bluffsRef.current = event.bluffs ?? {}
-        setChallenges(event.challenges ?? {})
-        challengesRef.current = event.challenges ?? {}
-        const snapshotCodes = event.phase === 'reveal' ? (event.codesByPlayer ?? {}) : {}
-        setCodesByPlayer(snapshotCodes)
-        codesByPlayerRef.current = snapshotCodes
-        setScores(event.scores ?? {})
-        scoresRef.current = event.scores ?? {}
-        if (event.gameStarted && screen !== 'reason' && screen !== 'waiting') {
-          clearAll()
-          setScreen('stage')
-        }
         return
       }
 
@@ -1086,10 +1218,34 @@ function App() {
           if (incoming.role !== 'player' || !/^guest-[a-z0-9]+-[a-z0-9]+$/i.test(id)) return
           const mappedId = peerToPlayerRef.current[from]
           if (mappedId && mappedId !== id) return
+          if (mappedId && /^spec-/i.test(mappedId)) return
+
           const rosterAlreadyHasId = playersRef.current.some((p) => p.id === id)
 
           if (isReturning) {
             if (activePeerByPlayerRef.current[id] === from) return
+
+            if (rosterAlreadyHasId) {
+              const cleanedRoster = playersRef.current.filter((p) => p.id !== id)
+              playersRef.current = cleanedRoster
+              setPlayers(cleanedRoster)
+              syncRoster(cleanedRoster, heldPlayersRef.current)
+              const nextLocked = lockedPlayersRef.current.filter((x) => x !== id)
+              lockedPlayersRef.current = nextLocked
+              setLockedPlayers(nextLocked)
+              const nextBluffed = bluffedPlayersRef.current.filter((x) => x !== id)
+              bluffedPlayersRef.current = nextBluffed
+              setBluffedPlayers(nextBluffed)
+              const nextCodes = { ...codesByPlayerRef.current }
+              delete nextCodes[id]
+              codesByPlayerRef.current = nextCodes
+              setCodesByPlayer(nextCodes)
+              const nextBluffs = { ...bluffsRef.current }
+              delete nextBluffs[id]
+              bluffsRef.current = nextBluffs
+              setBluffs(nextBluffs)
+            }
+
             pendingPeerByPlayerRef.current[id] = from
             setPendingPlayers((prev) => {
               if (prev.some((p) => p.id === id)) return prev
@@ -1098,7 +1254,6 @@ function App() {
             return
           }
 
-          // A connection cannot claim an ID already owned by another peer.
           if (rosterAlreadyHasId) {
             if (activePeerByPlayerRef.current[id] === from) return
             return
@@ -1492,15 +1647,40 @@ function App() {
       playerName ??
       'Spectator'
 
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const id = `${myPlayerId}-${now}-${Math.random().toString(36).slice(2, 8)}`
+    sentReactionIdsRef.current.add(id)
+    if (sentReactionIdsRef.current.size > 100) {
+      const first = sentReactionIdsRef.current.values().next().value
+      if (first) sentReactionIdsRef.current.delete(first)
+    }
+
     setReactions((prev) => [
       ...prev.slice(-19),
       { id, emoji, fromName: senderName },
     ])
-    send({ type: 'REACTION', fromId: myPlayerId, emoji })
+    send({ type: 'REACTION', fromId: myPlayerId, emoji, id } as GameEvent)
   }
 
   async function handleSpectatorJoin(code: string, name: string) {
+    clearSession()
+    setPlayers([])
+    setPendingPlayers([])
+    setLockedPlayers([])
+    setCodesByPlayer({})
+    setMyCode(null)
+    setMyPeek(null)
+    setBluffs({})
+    setBluffedPlayers([])
+    setChallenges({})
+    setGuesses({})
+    setScores({})
+    setRoundDeltas({})
+    setChallengeResults([])
+    setHeldPlayers([])
+    peerToPlayerRef.current = {}
+    activePeerByPlayerRef.current = {}
+    pendingPeerByPlayerRef.current = {}
+
     setPlayerName(name)
     await joinRoom(code, name)
     await new Promise((r) => setTimeout(r, 250))
@@ -1519,8 +1699,18 @@ function App() {
       status: 'active',
     }
 
-    send({ type: 'SPECTATOR_JOIN', spectator })
+    // Show ourselves immediately so the watcher count is never stuck at 0
+    // while waiting for the host's GAME_STATE_SYNC response.
+    setSpectators([spectator])
+    spectatorsRef.current = [spectator]
     setSpectatorJoined(true)
+
+    // Retry the join like players do with HELLO, in case the data channel
+    // isn't fully open on the first tick.
+    const joinEvent: GameEvent = { type: 'SPECTATOR_JOIN', spectator }
+    send(joinEvent)
+    setTimeout(() => send(joinEvent), 500)
+    setTimeout(() => send(joinEvent), 1500)
   }
 
   function handleSpectatorLeave() {
@@ -1664,8 +1854,14 @@ function App() {
     return (
       <SpectatorScreen
         joined={spectatorJoined}
-        players={players}
-        spectators={spectators}
+        players={players.map((p) => ({
+          ...p,
+          score: scores[p.id] ?? 0,
+        }))}
+        spectators={spectators.map((s) => ({
+          ...s,
+          score: scores[s.id] ?? 0,
+        }))}
         phase={previewPhase}
         roundLabel={`R${roundNumber}/5`}
         gameStarted={gameStarted}
@@ -1691,9 +1887,6 @@ function App() {
             setPlayerName(name)
             setConnectionNotice(null)
 
-            // ALWAYS open a fresh Sparrow connection. Reusing an old
-            // connection risks silently dropping messages if the data
-            // channel was closed by the peer or by Sparrow itself.
             await joinRoom(code, name)
             await new Promise((r) => setTimeout(r, 250))
 
@@ -2131,21 +2324,21 @@ function App() {
             <GameOverPanel
               players={finalPlayers}
               onPlayAgain={() => {
-                setLockedPlayers([])
-                setCodesByPlayer({})
-                setMyCode(null)
-                setMyPeek(null)
-                setBluffs({})
-                setBluffedPlayers([])
-                setChallenges({})
-                setGuesses({})
-                setRoundNumber(1)
-                setScores({})
-                setRoundDeltas({})
-                setChallengeResults([])
-                setPreviewPhase('lock')
-                clearAll()
+                resetGameStateLocally()
                 setScreen('lobby')
+
+                if (selfIdRef.current === 'host') {
+                  send({
+                    type: 'PHASE_CHANGE',
+                    phase: 'lobby',
+                    roundLabel: 'R0/5',
+                  })
+                  send({
+                    type: 'ROSTER_SYNC',
+                    players: playersRef.current,
+                    heldPlayers: [],
+                  })
+                }
               }}
               onBackToHome={async () => {
                 if (myPlayerId) {
@@ -2714,7 +2907,23 @@ function App() {
       }}
       onJoinRoom={() => setScreen('join')}
       onWatchGame={() => {
+        clearSession()
+        peerToPlayerRef.current = {}
+        activePeerByPlayerRef.current = {}
+        pendingPeerByPlayerRef.current = {}
+        setPlayers([])
+        setPendingPlayers([])
+        setHeldPlayers([])
+        setMyPlayerId(null)
         setSpectatorJoined(false)
+        setGameStarted(false)
+        gameStartedRef.current = false
+        setPreviewPhase('lock')
+        previewPhaseRef.current = 'lock'
+        setPhaseDeadlineAt(null)
+        phaseDeadlineAtRef.current = null
+        setRoundNumber(1)
+        roundNumberRef.current = 1
         setScreen('spectator')
       }}
     />
