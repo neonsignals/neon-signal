@@ -1,10 +1,3 @@
-/**
- * ICE Server Builder
- * ------------------
- * Returns the ICE server list (STUN + TURN) used to establish WebRTC
- * connections between players.
- * ...
- */
 type IceServer = {
   urls: string | string[]
   username?: string
@@ -27,10 +20,7 @@ const METERED_URLS = [
   'turns:standard.relay.metered.ca:443?transport=tcp',
 ]
 
-async function cloudflareIceServers(
-  env: Env,
-  ttl = 86400
-): Promise<IceServer[]> {
+async function cloudflareIceServers(env: Env, ttl = 86400): Promise<IceServer[]> {
   if (!env.CLOUDFLARE_TURN_KEY_ID || !env.CLOUDFLARE_TURN_API_TOKEN) {
     throw new Error('cloudflare credentials missing')
   }
@@ -53,10 +43,7 @@ async function cloudflareIceServers(
 }
 
 function meteredIceServers(env: Env): IceServer[] {
-  const {
-    METERED_TURN_USERNAME: username,
-    METERED_TURN_CREDENTIAL: credential,
-  } = env
+  const { METERED_TURN_USERNAME: username, METERED_TURN_CREDENTIAL: credential } = env
   if (!username || !credential) throw new Error('metered credentials missing')
 
   return METERED_URLS.map((urls) =>
@@ -65,8 +52,8 @@ function meteredIceServers(env: Env): IceServer[] {
 }
 
 const PROVIDERS: Record<string, (env: Env) => Promise<IceServer[]>> = {
-  metered: async (env) => meteredIceServers(env),
   cloudflare: (env) => cloudflareIceServers(env),
+  metered: async (env) => meteredIceServers(env),
 }
 
 export async function buildIceServers(
@@ -74,21 +61,16 @@ export async function buildIceServers(
   env: Env
 ): Promise<{ status: number; body: unknown }> {
   const wantsFallback = requested === 'auto'
-
   const primary =
     requested && PROVIDERS[requested]
       ? requested
-      : env.DEFAULT_TURN_PROVIDER && PROVIDERS[env.DEFAULT_TURN_PROVIDER]
-        ? env.DEFAULT_TURN_PROVIDER
-        : 'metered'
+      : env.DEFAULT_TURN_PROVIDER ?? 'cloudflare'
 
   const order = wantsFallback
     ? [primary, ...Object.keys(PROVIDERS).filter((p) => p !== primary)]
     : [primary]
 
-  const settled = await Promise.allSettled(
-    order.map((p) => PROVIDERS[p]!(env))
-  )
+  const settled = await Promise.allSettled(order.map((p) => PROVIDERS[p]!(env)))
 
   const iceServers: IceServer[] = []
   const failures: string[] = []
@@ -99,16 +81,10 @@ export async function buildIceServers(
   })
 
   if (!iceServers.length) {
-    return {
-      status: 502,
-      body: { error: 'all providers failed', failures },
-    }
+    return { status: 502, body: { error: 'all providers failed', failures } }
   }
 
-  return {
-    status: 200,
-    body: { provider: primary, iceServers, failures },
-  }
+  return { status: 200, body: { provider: primary, iceServers, failures } }
 }
 
 export const onRequestGet = async (context: {
@@ -116,16 +92,10 @@ export const onRequestGet = async (context: {
   env: Env
 }): Promise<Response> => {
   const url = new URL(context.request.url)
-  const result = await buildIceServers(
-    url.searchParams.get('provider'),
-    context.env
-  )
+  const result = await buildIceServers(url.searchParams.get('provider'), context.env)
 
   return new Response(JSON.stringify(result.body), {
     status: result.status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'no-store',
-    },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
   })
 }
