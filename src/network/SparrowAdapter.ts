@@ -25,9 +25,11 @@ const rtcConfigurator = async (_ctx: { signaller: any }) => {
   ]
 
   try {
-    // `provider=auto` tells the server to try its primary provider,
-    // and if that fails, automatically fall back to the others.
-    const response = await fetch('/api/turn?provider=auto')
+    // No `?provider=` param → the endpoint uses DEFAULT_TURN_PROVIDER
+    // and returns exactly ONE provider's URLs. This is what avoids the
+    // race where both Metered and Cloudflare appear in iceServers and
+    // the browser silently picks whichever allocates first.
+    const response = await fetch('/api/turn')
 
     if (!response.ok) {
       console.warn(
