@@ -3,24 +3,8 @@
  * ------------------
  * Returns the ICE server list (STUN + TURN) used to establish WebRTC
  * connections between players.
- *
- * PROVIDER ORDER
- *   Primary:  metered    (reads METERED_TURN_USERNAME / METERED_TURN_CREDENTIAL)
- *   Fallback: cloudflare (reads CLOUDFLARE_TURN_KEY_ID / CLOUDFLARE_TURN_API_TOKEN)
- *
- * HOW TO SWITCH LATER
- *   Change the DEFAULT_TURN_PROVIDER environment variable:
- *     DEFAULT_TURN_PROVIDER=metered       (default — Metered first)
- *     DEFAULT_TURN_PROVIDER=cloudflare    (Cloudflare first)
- *   No code change required.
- *
- * QUERY OPTIONS
- *   GET /api/turn                     → uses DEFAULT_TURN_PROVIDER
- *   GET /api/turn?provider=metered    → forces Metered only
- *   GET /api/turn?provider=cloudflare → forces Cloudflare only
- *   GET /api/turn?provider=auto       → tries primary, then falls back to others
+ * ...
  */
-
 type IceServer = {
   urls: string | string[]
   username?: string
@@ -89,14 +73,8 @@ export async function buildIceServers(
   requested: string | null,
   env: Env
 ): Promise<{ status: number; body: unknown }> {
-  // When `requested` is 'auto' we try the primary provider, and if it
-  // fails, we automatically fall back to the others in the list.
   const wantsFallback = requested === 'auto'
 
-  // Primary provider:
-  //   • use ?provider=X if X is a known provider
-  //   • otherwise use DEFAULT_TURN_PROVIDER env var
-  //   • otherwise default to 'metered'
   const primary =
     requested && PROVIDERS[requested]
       ? requested
