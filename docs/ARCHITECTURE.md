@@ -40,7 +40,10 @@ This design does not require a conventional database, but it also means:
 - The room depends on the host browser remaining open and connected.
 - Closing or refreshing the host page can end the room.
 - A peer-to-peer host is not a trusted anti-cheat server. A technically sophisticated participant may tamper with their own browser or network messages.
+- Player return codes use a host-assigned `NEON-####` alias that maps to the original player ID and private token in host memory. The host keeps that mapping when a player leaves the active roster so a later return restores the same ID and accumulated score. The host releases the private token to a reconnecting peer only after approving the return.
 - The current project should not be described as providing server-enforced competitive integrity or permanent player accounts.
+
+Room invite codes remain the full Sparrow invite identifier. Replacing them with eight digits would require a shared room-directory service to resolve a short number to the underlying Sparrow invite; no such directory exists in this database-free build. Keep the full invite format until that service is implemented.
 
 For a future competitive version, move authoritative room state, player identity, score calculation, elimination, and persistence to a trusted server-side service. A database, coins, unlocks, and missions should be added only after that authority layer is designed.
 
@@ -58,6 +61,6 @@ Production variables:
 
 ## Private and public player data
 
-`Player` objects can contain a local rejoin token. Before roster, spectator, or game-state broadcasts, the code uses `toPublicPlayer` / `toPublicPlayers` to blank that field. A recipient should never need another player's rejoin token.
+`Player` objects can contain a private rejoin token. Before roster, spectator, or game-state broadcasts, the code uses `toPublicPlayer` / `toPublicPlayers` to blank that field. The visible `NEON-####` rejoin code is a room-scoped alias, not the underlying token. The host sends the private token only in the direct `JOIN_APPROVED` message after approving the returning player. Do not treat the short code as a cryptographically strong password. The existing room code remains Sparrow's native invite identifier; shortening it safely would require a shared room-directory lookup that this database-free build does not provide, so it is intentionally unchanged.
 
 Secret game codes are sent only to the relevant player during play and to the room for the Reveal phase. Spectator state synchronization does not include unrevealed codes.

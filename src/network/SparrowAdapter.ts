@@ -84,7 +84,7 @@ const GAME_EVENT_TYPES = new Set([
   'PHASE_CHANGE', 'BLUFF_SUBMITTED', 'CHALLENGE_SUBMITTED', 'GUESS_SUBMITTED',
   'GUESS_RESOLVED', 'CODES_REVEALED', 'ROUND_COMPLETE', 'GAME_STATE_SYNC',
   'ROSTER_SYNC', 'ROUND_SNAPSHOT', 'JOIN_APPROVED', 'JOIN_REJECTED', 'ROOM_FULL',
-  'REASON_UPDATED', 'SPECTATOR_JOIN', 'SPECTATOR_LEFT', 'REACTION',
+  'REASON_UPDATED', 'REJOIN_IDENTIFIED', 'SPECTATOR_JOIN', 'SPECTATOR_LEFT', 'REACTION',
 ])
 
 function serializeGameEvent(event: GameEvent): string | null {
@@ -134,6 +134,7 @@ const HOST_HANDLED_EVENTS = new Set([
   'JOIN_REJECTED',
   'ROOM_FULL',
   'REASON_UPDATED',
+  'REJOIN_IDENTIFIED',
   'SPECTATOR_JOIN',
   'SPECTATOR_LEFT',
   'REACTION',
@@ -340,12 +341,16 @@ export class SparrowAdapter implements NetworkAdapter {
   }
 
   setActivePlayerPeer(playerId: string, peerId: string): void {
+    // A returning player may present a temporary connection ID. Once the host
+    // resolves the branded code, rebind that peer connection to the original
+    // stable player ID so private game events keep reaching the same player.
     const connection = [...this.hostConnections].find(
-      (candidate) =>
-        this.hostConnectionPeerIds.get(candidate) === peerId &&
-        this.hostPeerPlayerIds.get(candidate) === playerId
+      (candidate) => this.hostConnectionPeerIds.get(candidate) === peerId
     )
-    if (connection) this.activePlayerConnections.set(playerId, connection)
+    if (connection) {
+      this.hostPeerPlayerIds.set(connection, playerId)
+      this.activePlayerConnections.set(playerId, connection)
+    }
   }
 
   sendToPeer(peerId: string, event: GameEvent): void {

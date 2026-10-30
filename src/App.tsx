@@ -33,7 +33,9 @@ import { isAllowedReaction } from './shared/reactions'
 import { formatRoomCode } from './shared/roomCode'
 import {
   getOrCreateToken,
-  regenerateToken,
+  generateRejoinCode,
+  normalizeRejoinCode,
+  setPrivateToken,
   saveSession,
   loadSession,
   clearSession,
@@ -206,6 +208,9 @@ function App() {
   const peerToPlayerRef = useRef<Record<string, string>>({})
   const activePeerByPlayerRef = useRef<Record<string, string>>({})
   const pendingPeerByPlayerRef = useRef<Record<string, string>>({})
+  // Host-only credentials survive temporary disconnects and roster removal.
+  const playerCredentialsRef = useRef<Map<string, { playerToken: string; rejoinCode: string }>>(new Map())
+  const rejoinCodeOwnersRef = useRef<Map<string, string>>(new Map())
   const phaseDeadlineAtRef = useRef<number | null>(phaseDeadlineAt)
   const handledPhaseKeyRef = useRef<string | null>(null)
   const isSpectatorRef = useRef<boolean>(false)
@@ -233,10 +238,6 @@ function App() {
     isSpectatorRef.current = screen === 'spectator'
   }, [screen])
 
-  useEffect(() => {
-    setMyRejoinCode(getOrCreateToken())
-  }, [])
-
   function triggerShake(kind: 'light' | 'heavy') {
     setShakeKind(kind)
     setShakeTrigger((n) => n + 1)
@@ -257,6 +258,7 @@ function App() {
         await joinRoom(saved.roomCode, saved.playerName)
         await new Promise((r) => setTimeout(r, 250))
 
+        myPlayerIdRef.current = saved.myPlayerId
         setMyPlayerId(saved.myPlayerId)
 
         const selfPlayer: Player = {
@@ -270,7 +272,13 @@ function App() {
           status: 'pending',
         }
 
-        send({ type: 'HELLO', player: selfPlayer, isReturning: true })
+        send({
+          type: 'HELLO',
+          player: selfPlayer,
+          isReturning: true,
+          rejoinCode: saved.rejoinCode,
+          requestId: saved.myPlayerId,
+        })
 
         setPendingRoomCode(saved.roomCode)
         setScreen('reason')
@@ -611,9 +619,29 @@ function App() {
       const hostAuthorityEvents = new Set([
         'GAME_START', 'PHASE_CHANGE', 'LOCK_STATUS', 'LOCK_CODE_ASSIGNED', 'CODES_REVEALED',
         'GUESS_RESOLVED', 'ROUND_COMPLETE', 'GAME_STATE_SYNC',
-        'ROSTER_SYNC', 'ROUND_SNAPSHOT', 'JOIN_APPROVED', 'JOIN_REJECTED', 'ROOM_FULL',
+        'ROSTER_SYNC', 'ROUND_SNAPSHOT', 'JOIN_APPROVED', 'JOIN_REJECTED', 'ROOM_FULL', 'REJOIN_IDENTIFIED',
       ])
       if (hostAuthorityEvents.has(event.type) && from !== 'host') return
+
+      if (event.type === 'REJOIN_IDENTIFIED') {
+        if (from !== 'host' || event.requestId !== myPlayerIdRef.current) return
+        myPlayerIdRef.current = event.playerId
+        setMyPlayerId(event.playerId)
+        setMyRejoinCode(event.rejoinCode)
+        const activeRoom = pendingRoomCode ?? roomCode
+        if (activeRoom) {
+          const currentSession = loadSession()
+          saveSession({
+            roomCode: activeRoom,
+            myPlayerId: event.playerId,
+            playerName: playerName || selfName || 'Player',
+            playerToken: currentSession?.playerToken || getOrCreateToken(),
+            rejoinCode: event.rejoinCode,
+            isHost: false,
+          })
+        }
+        return
+      }
 
       if (event.type === 'GAME_START') {
         if (selfIdRef.current === 'host' && from !== 'host') return
@@ -1109,6 +1137,18 @@ function App() {
 
       if (event.type === 'JOIN_APPROVED') {
         if (event.playerId !== myPlayerIdRef.current) return
+        if (event.playerToken) setPrivateToken(event.playerToken)
+        if (event.rejoinCode) {
+          setMyRejoinCode(event.rejoinCode)
+          saveSession({
+            roomCode: pendingRoomCode ?? roomCode ?? '',
+            myPlayerId: event.playerId,
+            playerName: playerName || selfName || 'Player',
+            playerToken: event.playerToken || getOrCreateToken(),
+            rejoinCode: event.rejoinCode,
+            isHost: false,
+          })
+        }
         clearAll()
         setJoinedMidRound(true)
         setScreen('stage')
@@ -1170,65 +1210,155 @@ function App() {
 
         const isNew = !playersRef.current.some((p) => p.id === id)
 
-        if (event.type === 'HELLO' && selfId === 'host') {
+        if (event.type === 'HELLO' && selfIdRef.current === 'host') {
           const isReturning = event.isReturning === true
-          if (incoming.role !== 'player' || !/^guest-[a-z0-9]+-[a-z0-9]+$/i.test(id)) return
+          if (incoming.role !== 'player' || !/^guest-[a-z0-9]+-[a-z0-9]+$/i.test(incoming.id)) return
           const mappedId = peerToPlayerRef.current[from]
-          if (mappedId && mappedId !== id) return
+          if (mappedId && mappedId !== incoming.id && !isReturning) return
           if (mappedId && /^spec-/i.test(mappedId)) return
 
-          const rosterAlreadyHasId = playersRef.current.some((p) => p.id === id)
-
           if (isReturning) {
-            if (activePeerByPlayerRef.current[id] === from) return
+            // A short branded code is a lookup key held only by the room host.
+            // Existing high-entropy tokens remain supported for old saved sessions.
+            const suppliedCode = normalizeRejoinCode(event.rejoinCode ?? '')
+            let returningId = suppliedCode
+              ? rejoinCodeOwnersRef.current.get(suppliedCode)
+              : undefined
 
-            if (rosterAlreadyHasId) {
-              const cleanedRoster = playersRef.current.filter((p) => p.id !== id)
+            if (!returningId && incoming.playerToken) {
+              for (const [candidateId, credentials] of playerCredentialsRef.current) {
+                if (credentials.playerToken === incoming.playerToken) {
+                  returningId = candidateId
+                  break
+                }
+              }
+            }
+
+            const credentials = returningId
+              ? playerCredentialsRef.current.get(returningId)
+              : undefined
+            if (!returningId || !credentials) {
+              network.sendToPeer(from, { type: 'JOIN_REJECTED', playerId: incoming.id })
+              return
+            }
+
+            const alreadyPendingPeer = pendingPeerByPlayerRef.current[returningId]
+            if (alreadyPendingPeer && alreadyPendingPeer !== from) {
+              network.sendToPeer(from, { type: 'JOIN_REJECTED', playerId: incoming.id })
+              return
+            }
+
+            const existingPlayer = playersRef.current.find((player) => player.id === returningId)
+            const existingPeer = activePeerByPlayerRef.current[returningId]
+            if (existingPeer === from) {
+              network.sendToPeer(from, {
+                type: 'REJOIN_IDENTIFIED',
+                requestId: event.requestId ?? incoming.id,
+                playerId: returningId,
+                rejoinCode: credentials.rejoinCode,
+              })
+              return
+            }
+
+            network.sendToPeer(from, {
+              type: 'REJOIN_IDENTIFIED',
+              requestId: event.requestId ?? incoming.id,
+              playerId: returningId,
+              rejoinCode: credentials.rejoinCode,
+            })
+
+            // If an old connection is still registered, stop accepting actions
+            // from it before the returning peer is approved.
+            if (existingPeer) {
+              delete peerToPlayerRef.current[existingPeer]
+              delete activePeerByPlayerRef.current[returningId]
+            }
+
+            const priorScore = scoresRef.current[returningId] ?? existingPlayer?.score ?? 0
+            const returningPlayer: Player = {
+              ...incoming,
+              id: returningId,
+              name: safeIncomingName || existingPlayer?.name || incoming.name,
+              score: priorScore,
+              joinedAt: existingPlayer?.joinedAt ?? Date.now(),
+              status: 'pending',
+            }
+
+            if (existingPlayer) {
+              const cleanedRoster = playersRef.current.filter((p) => p.id !== returningId)
               playersRef.current = cleanedRoster
               setPlayers(cleanedRoster)
               syncRoster(cleanedRoster, heldPlayersRef.current)
-              const nextLocked = lockedPlayersRef.current.filter((x) => x !== id)
+
+              // Clear only the departed player's in-round actions. Do not clear
+              // scores or the private credential mapping for this player.
+              const nextLocked = lockedPlayersRef.current.filter((x) => x !== returningId)
               lockedPlayersRef.current = nextLocked
               setLockedPlayers(nextLocked)
-              const nextBluffed = bluffedPlayersRef.current.filter((x) => x !== id)
+              const nextBluffed = bluffedPlayersRef.current.filter((x) => x !== returningId)
               bluffedPlayersRef.current = nextBluffed
               setBluffedPlayers(nextBluffed)
               const nextCodes = { ...codesByPlayerRef.current }
-              delete nextCodes[id]
+              delete nextCodes[returningId]
               codesByPlayerRef.current = nextCodes
               setCodesByPlayer(nextCodes)
               const nextBluffs = { ...bluffsRef.current }
-              delete nextBluffs[id]
+              delete nextBluffs[returningId]
               bluffsRef.current = nextBluffs
               setBluffs(nextBluffs)
             }
 
-            pendingPeerByPlayerRef.current[id] = from
-            setPendingPlayers((prev) => {
-              if (prev.some((p) => p.id === id)) return prev
-              return [...prev, { ...incoming, id, status: 'pending' }]
-            })
+            pendingPeerByPlayerRef.current[returningId] = from
+            setPendingPlayers((prev) => [
+              ...prev.filter((p) => p.id !== returningId),
+              returningPlayer,
+            ])
             return
           }
 
+          if (playersRef.current.length >= MAX_PLAYERS && !playersRef.current.some((p) => p.id === incoming.id)) {
+            network.sendToPeer(from, { type: 'ROOM_FULL', playerId: incoming.id })
+            return
+          }
+
+          // Reuse the same assignment when Sparrow retries HELLO from this peer,
+          // and resend it so a dropped private response cannot strand the player.
+          let credentials = playerCredentialsRef.current.get(incoming.id)
+          if (!credentials) {
+            const rejoinCode = generateRejoinCode(rejoinCodeOwnersRef.current.keys())
+            credentials = {
+              playerToken: incoming.playerToken || getOrCreateToken(),
+              rejoinCode,
+            }
+            playerCredentialsRef.current.set(incoming.id, credentials)
+            rejoinCodeOwnersRef.current.set(rejoinCode, incoming.id)
+          }
+
+          network.sendToPeer(from, {
+            type: 'REJOIN_IDENTIFIED',
+            requestId: event.requestId ?? incoming.id,
+            playerId: incoming.id,
+            rejoinCode: credentials.rejoinCode,
+          })
+
+          const rosterAlreadyHasId = playersRef.current.some((p) => p.id === incoming.id)
           if (rosterAlreadyHasId) {
-            if (activePeerByPlayerRef.current[id] === from) return
+            if (activePeerByPlayerRef.current[incoming.id] === from) return
             return
           }
 
-          if (playersRef.current.length >= MAX_PLAYERS) {
-            network.sendToPeer(from, { type: 'ROOM_FULL', playerId: id })
-            return
+          peerToPlayerRef.current[from] = incoming.id
+          activePeerByPlayerRef.current[incoming.id] = from
+          network.setActivePlayerPeer(incoming.id, from)
+          const active: Player = {
+            ...incoming,
+            score: scoresRef.current[incoming.id] ?? 0,
+            status: 'active',
           }
-
-          peerToPlayerRef.current[from] = id
-          activePeerByPlayerRef.current[id] = from
-          network.setActivePlayerPeer(id, from)
-          const active: Player = { ...incoming, id, status: 'active' }
           const roster = [...playersRef.current, active]
 
           const held = gameStartedRef.current
-            ? [...heldPlayersRef.current, id]
+            ? [...heldPlayersRef.current, incoming.id]
             : heldPlayersRef.current
 
           setPlayers(roster)
@@ -1240,7 +1370,6 @@ function App() {
           send(buildSnapshot(roster, held))
           return
         }
-
         if (event.type === 'HELLO' && !event.isReturning) {
           setPlayers((prev) => {
             if (prev.some((p) => p.id === id)) return prev
@@ -1318,7 +1447,7 @@ function App() {
     } finally {
       clearLastEvent()
     }
-  }, [lastEvent, selfId, selfName, send, sendToPlayer, clearAll, clearLastEvent, play, screen])
+  }, [lastEvent, selfId, selfName, send, sendToPlayer, clearAll, clearLastEvent, play, screen, playerName, pendingRoomCode, roomCode])
 
   // Someone's connection dropped — remove them, then resync everyone.
   useEffect(() => {
@@ -1578,7 +1707,13 @@ function App() {
       return
     }
 
-    const activePlayer: Player = { ...p, status: 'active' }
+    const savedCredentials = playerCredentialsRef.current.get(p.id)
+    const activePlayer: Player = {
+      ...p,
+      score: scoresRef.current[p.id] ?? p.score ?? 0,
+      playerToken: savedCredentials?.playerToken ?? p.playerToken,
+      status: 'active',
+    }
     peerToPlayerRef.current[pendingPeerId] = p.id
     activePeerByPlayerRef.current[p.id] = pendingPeerId
     network.setActivePlayerPeer(p.id, pendingPeerId)
@@ -1599,7 +1734,12 @@ function App() {
     heldPlayersRef.current = held
 
     syncRoster(newRoster, held)
-    network.sendToPeer(pendingPeerId, { type: 'JOIN_APPROVED', playerId: p.id })
+    network.sendToPeer(pendingPeerId, {
+      type: 'JOIN_APPROVED',
+      playerId: p.id,
+      playerToken: savedCredentials?.playerToken,
+      rejoinCode: savedCredentials?.rejoinCode,
+    })
     network.sendToPeer(pendingPeerId, buildSnapshot(newRoster, held))
   }
 
@@ -1708,7 +1848,7 @@ function App() {
     setScreen('landing')
   }
 
-  const RejoinPill = (
+  const RejoinPill = selfId === 'host' ? null : (
     <div
       style={{
         display: 'flex',
@@ -1739,7 +1879,7 @@ function App() {
             letterSpacing: '0.05em',
           }}
         >
-          {myRejoinCode || '...'}
+          {myRejoinCode || 'ASSIGNING…'}
         </strong>
         <button
           type="button"
@@ -1760,26 +1900,6 @@ function App() {
           }}
         >
           Copy
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            const fresh = regenerateToken()
-            setMyRejoinCode(fresh)
-          }}
-          title="Generate a new rejoin code for this tab"
-          className="rejoin-code-action rejoin-code-action-new"
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--color-magenta)',
-            color: 'var(--color-magenta)',
-            borderRadius: 6,
-            padding: '2px 8px',
-            fontSize: 11,
-            cursor: 'pointer',
-          }}
-        >
-          New
         </button>
       </div>
     </div>
@@ -1869,30 +1989,54 @@ function App() {
         onBack={() => setScreen('landing')}
         onJoin={async (code, name, rejoinCode) => {
           try {
+            const typedRejoinValue = rejoinCode.trim().toUpperCase()
+            const validManualCode = normalizeRejoinCode(typedRejoinValue)
+            const legacyManualToken = /^P[0-9A-F]{32}$/i.test(typedRejoinValue)
+            if (typedRejoinValue && !validManualCode && !legacyManualToken) {
+              throw new Error('Rejoin code must look like NEON-7429.')
+            }
+
             setPlayerName(name)
             setConnectionNotice(null)
+            setMyRejoinCode('')
 
             await joinRoom(code, name)
             await new Promise((r) => setTimeout(r, 250))
 
             const savedSession = loadSession()
-            const hasManualCode = rejoinCode.trim().length > 0
-            const hasMatchingSession =
-              savedSession !== null && savedSession.roomCode === code
+            const manualShortCode = normalizeRejoinCode(typedRejoinValue)
+            const isLegacyToken = /^P[0-9A-F]{32}$/i.test(typedRejoinValue)
+            const hasManualCode = Boolean(manualShortCode || isLegacyToken)
+            const sameRoomSession = savedSession !== null && savedSession.roomCode === code
+            const sessionMatchesManualCode = Boolean(
+              sameRoomSession && manualShortCode && savedSession?.rejoinCode === manualShortCode
+            )
+            const sessionMatchesLegacyToken = Boolean(
+              sameRoomSession && isLegacyToken && savedSession?.playerToken === typedRejoinValue
+            )
+            const useSavedSession = Boolean(
+              sameRoomSession && (!hasManualCode || sessionMatchesManualCode || sessionMatchesLegacyToken)
+            )
+            const isReturning = hasManualCode || useSavedSession
 
-            const isReturning = hasManualCode || hasMatchingSession
-
-            const token = hasManualCode
-              ? rejoinCode.trim().toUpperCase()
-              : savedSession?.playerToken ?? getOrCreateToken()
+            // When a branded code is entered on another device, let the host
+            // resolve the original player and privately return its token.
+            const token = manualShortCode && !sessionMatchesManualCode
+              ? ''
+              : isLegacyToken
+                ? typedRejoinValue
+                : useSavedSession
+                  ? savedSession?.playerToken ?? getOrCreateToken()
+                  : getOrCreateToken()
 
             const safeName =
               name.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'guest'
             const suffix = Math.random().toString(36).slice(2, 8)
-            const myId = isReturning && savedSession
+            const myId = useSavedSession && savedSession
               ? savedSession.myPlayerId
               : `guest-${safeName}-${suffix}`
 
+            myPlayerIdRef.current = myId
             setMyPlayerId(myId)
 
             const selfPlayer: Player = {
@@ -1922,6 +2066,7 @@ function App() {
               myPlayerId: myId,
               playerName: name,
               playerToken: token,
+              rejoinCode: manualShortCode || (useSavedSession ? savedSession?.rejoinCode : undefined),
               isHost: false,
             })
 
@@ -1933,6 +2078,8 @@ function App() {
                 type: 'HELLO' as const,
                 player: selfPlayer,
                 isReturning: true,
+                rejoinCode: manualShortCode || (useSavedSession ? savedSession?.rejoinCode : undefined),
+                requestId: myId,
               }
               send(hello)
               setTimeout(() => send(hello), 500)
@@ -1940,7 +2087,7 @@ function App() {
               setScreen('reason')
             } else {
               setPlayers([hostPlayer, selfPlayer])
-              const hello = { type: 'HELLO' as const, player: selfPlayer }
+              const hello = { type: 'HELLO' as const, player: selfPlayer, requestId: myId }
               send(hello)
               setTimeout(() => send(hello), 500)
               setTimeout(() => send(hello), 1500)
@@ -2507,7 +2654,7 @@ function App() {
     }))
 
     return (
-      <div style={{ padding: '24px', minHeight: '100vh' }}>
+      <div className="game-shell" style={{ padding: '24px', minHeight: '100vh' }}>
         <ScreenShake trigger={shakeTrigger} kind={shakeKind}>
           {showIntro && (
             <PhaseIntro
@@ -2865,6 +3012,8 @@ function App() {
           peerToPlayerRef.current = {}
           activePeerByPlayerRef.current = {}
           pendingPeerByPlayerRef.current = {}
+          playerCredentialsRef.current.clear()
+          rejoinCodeOwnersRef.current.clear()
           await createRoom(name)
 
           const token = getOrCreateToken()

@@ -103,3 +103,5 @@ A GitHub Actions workflow runs the unit tests and production build on pushes and
 ## Current scope and future work
 
 This release intentionally does **not** include accounts, a database, coins, unlockable levels, missions, elimination of defeated players, or persistent spectator progression. Those features should be designed as a separate upgrade using a trusted server-side game state and storage layer.
+
+See [the graphics and visual identity update](docs/GRAPHICS-UPGRADE.md) for the new visual assets and styling.

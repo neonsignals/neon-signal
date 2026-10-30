@@ -90,4 +90,13 @@ describe('round scoring', () => {
     expect(result.challengeResults).toHaveLength(0)
     expect(result.deltas).toEqual({ a: 2, b: 0, c: 0 })
   })
+
+  it('retains the total score for a player temporarily absent from the roster', () => {
+    const result = calculateRoundScores({
+      ...base,
+      players: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }],
+      scores: { a: 16, b: 11, departed: 29 },
+    })
+    expect(result.scores).toEqual({ a: 16, b: 11, departed: 29 })
+  })
 })

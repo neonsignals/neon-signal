@@ -44,7 +44,9 @@ export type ChallengeOutcome = {
 // ---------- Game Events ----------
 
 export type GameEvent =
-  | { type: 'HELLO'; player: Player; isReturning?: boolean }
+  | { type: 'HELLO'; player: Player; isReturning?: boolean; rejoinCode?: string; requestId?: string }
+  // Sent directly by the host to the reconnecting peer; never broadcast.
+  | { type: 'REJOIN_IDENTIFIED'; requestId: string; playerId: PlayerId; rejoinCode: string }
   | { type: 'PLAYER_JOINED'; player: Player }
   | { type: 'PLAYER_LEFT'; playerId: PlayerId; reason?: string }
   | { type: 'NAME_CHANGED'; playerId: PlayerId; name: string }
@@ -125,7 +127,7 @@ export type GameEvent =
         scores: Record<PlayerId, number>
     }
 
-  | { type: 'JOIN_APPROVED'; playerId: PlayerId }
+  | { type: 'JOIN_APPROVED'; playerId: PlayerId; playerToken?: string; rejoinCode?: string }
   | { type: 'JOIN_REJECTED'; playerId: PlayerId }
   | { type: 'ROOM_FULL'; playerId: PlayerId }
   | { type: 'REASON_UPDATED'; playerId: PlayerId; reason: string }

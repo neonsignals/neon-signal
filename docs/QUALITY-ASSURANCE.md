@@ -14,7 +14,7 @@ npm run build
 
 `npm run check` runs the test suite and production build in sequence. GitHub Actions runs these checks on pushes and pull requests.
 
-The unit tests cover clue parsing and truth evaluation, challenge and guess scoring, round-three multipliers, reaction allow-listing, private player-token redaction, and round-label parsing.
+The unit tests cover clue parsing and truth evaluation, challenge and guess scoring, round-three multipliers, reaction allow-listing, private player-token redaction, round-label parsing, branded rejoin-code generation/normalization, and retention of scores for temporarily departed players.
 
 ## Live multiplayer matrix
 
@@ -26,7 +26,10 @@ The unit tests cover clue parsing and truth evaluation, challenge and guess scor
 | Cross-network connection | Wi-Fi host + mobile-data guest | Guest joins without using the same Wi-Fi | ☐ Not tested |
 | Watch a Game | 2 players + 1 spectator | Spectator sees phases and scores; no player slot used | ☐ Not tested |
 | Spectator reconnect | Spectator refreshes/rejoins | Watch view receives current public game state | ☐ Not tested |
-| Player reconnect | Guest drops and reconnects | Host can review and approve the returning player | ☐ Not tested |
+| Player reconnect | Guest drops and reconnects using `NEON-####` | Host can review and approve the return; the long token is never displayed | ☐ Not tested |
+| Cross-device player return | Same player enters the branded code from another browser | Original player identity and accumulated score are restored after host approval | ☐ Not tested |
+| Rejoin-code privacy | Inspect roster/state broadcasts and UI | Private token is not shown or broadcast; it is sent directly only after approval | ☐ Not tested |
+| Room-code compatibility | Create and join a room with the displayed Sparrow invite code | Existing invite format still connects normally; no alias lookup service is required | ☐ Not tested |
 | Host disconnect | Host closes/reloads the page | Confirm and document that the room may end | ☐ Not tested |
 
 ## Game-rule matrix

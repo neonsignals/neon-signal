@@ -46,11 +46,17 @@ export function LandingScreen({ onCreateRoom, onJoinRoom, onWatchGame }: Landing
     <>
       <main className="landing">
         <header className="landing-header">
-          <h1 className="landing-title">⚡ Neon Signal ⚡</h1>
-          <p className="landing-tagline">late-night heist</p>
+          <p className="landing-eyebrow">LIVE MULTIPLAYER · CODE & BLUFF ARENA</p>
+          <h1 className="landing-title">NEON SIGNAL</h1>
+          <p className="landing-tagline">THINK · BLUFF · CHALLENGE · WIN</p>
           <p className="landing-description">
-            Read the clues, challenge bluffs, crack secret codes and outscore your rivals.
+            Read the clues. Outsmart the table. Challenge a bluff and crack the secret code before your rivals do.
           </p>
+          <div className="landing-metrics" aria-label="Game features">
+            <span><strong>08</strong> PLAYERS</span>
+            <span><strong>05</strong> ROUNDS</span>
+            <span><strong>LIVE</strong> MULTIPLAYER</span>
+          </div>
         </header>
 
         <nav className="landing-actions" aria-label="Main menu">

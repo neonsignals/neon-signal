@@ -78,7 +78,7 @@ export function JoinRoomScreen({ onBack, onJoin }: JoinRoomScreenProps) {
             type="text"
             value={rejoinCode}
             onChange={(e) => setRejoinCode(e.target.value.toUpperCase())}
-            placeholder="PXXXXXXXX"
+            placeholder="NEON-7429"
             spellCheck={false}
             autoComplete="off"
           />
@@ -97,7 +97,7 @@ export function JoinRoomScreen({ onBack, onJoin }: JoinRoomScreenProps) {
             padding: 0,
           }}
         >
-          Rejoining? Enter your rejoin code
+          Rejoining? Enter your NEON rejoin code
         </button>
       )}
 

@@ -10,7 +10,7 @@
 
 ## Player data
 
-The current game asks for a display name only. Keep names short and avoid entering personal or sensitive information. Player rejoin tokens are local bearer values and are removed from public player objects before roster and state broadcasts.
+The current game asks for a display name only. Keep names short and avoid entering personal or sensitive information. Each player has a private, high-entropy rejoin token that is never displayed and is removed from public player objects before roster and state broadcasts. The host assigns a room-scoped `NEON-####` code as a convenient lookup code. A short code is easier to guess than the private token, so it is not treated as equivalent cryptographic strength: the host must approve every return request, and the private token is sent only to that peer after approval. The host keeps the short-code-to-player mapping in memory for the life of the room; it is not a permanent account system.
 
 Unrevealed secret codes should remain private during play. The host coordinates game state; codes are revealed only in the Reveal phase. Spectator state sync intentionally excludes unrevealed secret codes.
 
