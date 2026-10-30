@@ -34,7 +34,7 @@ export function ChallengePanel({
         {secondsLeft}s ·{' '}
         {myChallenge
           ? 'You have made your one challenge'
-          : 'Choose one player who left no clue, or skip'}
+          : 'Choose one player whose clue may be false, or skip'}
       </p>
 
       <ul className="challenge-panel-list">
@@ -55,7 +55,7 @@ export function ChallengePanel({
                 <div className="challenge-panel-bluff">
                   {r.bluff && r.bluff.length > 0
                     ? `"${r.bluff}"`
-                    : '(no clue)'}
+                    : '(no clue submitted)'}
                 </div>
                 {r.challengeCount > 0 && (
                   <div className="challenge-panel-count">
@@ -74,7 +74,7 @@ export function ChallengePanel({
                   disabled={locked}
                   onClick={() => onChallenge(r.id)}
                 >
-                  ⚡ Challenge
+                  ⚡ Challenge clue
                 </button>
               )}
             </li>
@@ -90,7 +90,7 @@ export function ChallengePanel({
       <p className="challenge-panel-hint">
         {myChallenge
           ? 'Waiting for the result at the end of the round…'
-          : 'One challenge only: +4 if they left no clue, or −3 if they submitted any clue.'}
+          : 'One challenge only. A correct challenge catches a false or missing clue (+4). A wrong challenge costs 3 points. A clue that is not caught earns its author +2.'}
       </p>
     </div>
   )

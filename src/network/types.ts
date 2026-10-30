@@ -36,6 +36,8 @@ export type ChallengeOutcome = {
   targetId: PlayerId
   targetName: string
   success: boolean
+  reason: 'missing' | 'false' | 'true'
+  claimText: string
   points: number
 }
 

@@ -37,7 +37,7 @@ export function TableContent({ phase }: TableContentProps) {
     return (
       <div className="table-phase">
         <p className="table-phase-title">BLUFF</p>
-        <p className="table-phase-hint">Type a clue about your code</p>
+        <p className="table-phase-hint">Choose a true or false clue about your code</p>
         <div className="table-preview-input">starts with a 7…</div>
       </div>
     )
@@ -47,7 +47,7 @@ export function TableContent({ phase }: TableContentProps) {
     return (
       <div className="table-phase">
         <p className="table-phase-title">CHALLENGE</p>
-        <p className="table-phase-hint">Challenge one player who gave no clue</p>
+        <p className="table-phase-hint">Challenge a clue you think is false</p>
         <div className="table-preview-challenge">⚡ CHOOSE ONE PLAYER</div>
       </div>
     )

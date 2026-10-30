@@ -60,7 +60,7 @@ export function PlayerSeat({
           {player.bluff && player.bluff.length > 0 ? (
             <span>"{player.bluff}"</span>
           ) : (
-            <span className="player-seat-bluff-empty">(no clue)</span>
+            <span className="player-seat-bluff-empty">(no clue submitted)</span>
           )}
         </div>
       )}

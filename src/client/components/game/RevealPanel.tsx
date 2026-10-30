@@ -84,11 +84,20 @@ export function RevealPanel({
                     : ' reveal-panel-challenge-fail')
                 }
               >
-                <span className="reveal-panel-challenge-names">
-                  {c.challengerName} → {c.targetName}
-                </span>
+                <div className="reveal-panel-challenge-main">
+                  <span className="reveal-panel-challenge-names">
+                    {c.challengerName} challenged {c.targetName}
+                  </span>
+                  <span className="reveal-panel-challenge-claim">
+                    {c.claimText ? `“${c.claimText}”` : '(no clue submitted)'}
+                  </span>
+                </div>
                 <span className="reveal-panel-challenge-verdict">
-                  {c.success ? 'CAUGHT!' : 'MISSED'}
+                  {c.reason === 'missing'
+                    ? 'NO CLUE CAUGHT'
+                    : c.reason === 'false'
+                      ? 'FALSE CLUE CAUGHT'
+                      : 'TRUE CLUE · MISSED'}
                 </span>
                 <span className="reveal-panel-challenge-points">
                   {c.points > 0 ? `+${c.points}` : c.points}

@@ -23,17 +23,17 @@ const phases = [
   },
   {
     number: '3',
-    title: 'BLUFF — write a clue',
+    title: 'BLUFF — choose a clue',
     description:
-      'Write a short sentence about your own secret code. It can be true or a lie. You can also leave it blank. You have a short time, so keep it simple.',
-    example: 'Example: “My code starts with a 7.”',
+      'Choose a sentence type from the list, then choose a number. The sentence can be true or a lie. You do not need to type. For example, you can say what your first digit is, whether your code contains a number, or what all three digits add up to. You may also submit no clue.',
+    example: 'Examples: “My first digit is 7.” · “My code contains the digit 4.” · “The sum of my digits is 13.”',
   },
   {
     number: '4',
-    title: 'CHALLENGE — choose carefully',
+    title: 'CHALLENGE — decide if a clue is false',
     description:
-      'You may challenge one other player, or skip this step. Important: the current game rule gives you challenge points when that player left their clue blank. If they wrote any clue, your challenge does not succeed. The game does not automatically check whether a written clue is true or false.',
-    example: 'Successful challenge: +4 points · Unsuccessful challenge: −3 points.',
+      'Look at the clues other players submitted. You may challenge one player if you think their sentence is false, or if they submitted no clue. The game checks the sentence against that player’s secret code when the round is revealed. You can also skip the challenge.',
+    example: 'Correct challenge (false or missing clue): +4 points · Wrong challenge (the clue was true): −3 points.',
   },
   {
     number: '5',
@@ -161,10 +161,12 @@ export function HowToPlayModal({ onClose }: HowToPlayModalProps) {
               <li><strong>+1 point</strong> for each correct digit in the wrong position.</li>
               <li><strong>+5 extra points</strong> for guessing all 3 digits in the exact correct order.</li>
               <li><strong>Up to 3 guesses</strong> are allowed in each round.</li>
-              <li><strong>Bluff bonus: +2 points</strong> for writing a clue that is not successfully challenged.</li>
+              <li><strong>+2 clue bonus</strong> when your submitted clue is not successfully challenged. A blank clue earns no bonus.</li>
+              <li><strong>+4 points</strong> when your challenge catches a false or missing clue.</li>
+              <li><strong>−3 points</strong> when you challenge a clue that is actually true.</li>
             </ul>
             <p className="tutorial-note">
-              Round 3 doubles points, including challenge points and penalties. The scoreboard shows your running total. The player with the highest total after Round 5 wins.
+              Round 3 doubles every point change, including challenge rewards and penalties. The game checks structured clues against the secret code, so the result does not depend on another player's opinion. The scoreboard shows your running total. The player with the highest total after Round 5 wins.
             </p>
           </section>
 

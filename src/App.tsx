@@ -26,6 +26,7 @@ import { useJoinBanner } from './client/hooks/useJoinBanner'
 import { useSound } from './client/hooks/useSound'
 import { PHASES, type Phase } from './shared/phases'
 import { parseRoundNumber } from './shared/roundLabel'
+import { evaluateClue, isSuccessfulChallenge, isValidClueSubmission, parseClueText } from './shared/clues'
 import { formatRoomCode } from './shared/roomCode'
 import {
   getOrCreateToken,
@@ -356,11 +357,11 @@ function App() {
         break
       case 'bluff':
         play('select')
-        speak('Bluff phase. Say something about your code')
+        speak('Bluff phase. Choose a clue about your code. It can be true or a lie.')
         break
       case 'challenge':
         play('challenge')
-        speak('Challenge phase. You may challenge one player who left no clue')
+        speak('Challenge phase. Challenge one player if you think their clue is false or missing')
         break
       case 'guess':
         play('select')
@@ -384,11 +385,15 @@ function App() {
       for (const c of challengeResults) {
         if (c.success) {
           play('correct')
-          speak(`${c.challengerName} successfully challenged ${c.targetName}`)
+          if (c.reason === 'missing') {
+            speak(`${c.challengerName} caught ${c.targetName} without a clue`)
+          } else {
+            speak(`${c.challengerName} caught ${c.targetName} using a false clue`)
+          }
           triggerShake('heavy')
         } else {
           play('wrong')
-          speak(`${c.challengerName} made an unsuccessful challenge against ${c.targetName}`)
+          speak(`${c.challengerName} challenged ${c.targetName}, but the clue was true`)
           triggerShake('light')
         }
       }
@@ -495,7 +500,16 @@ function App() {
       challengesRef.current
     )) {
       const targetBluff = bluffsRef.current[targetId] ?? ''
-      const success = targetBluff.trim().length === 0
+      const targetSecret = codesByPlayerRef.current[targetId] ?? ''
+      const hasClue = targetBluff.trim().length > 0
+      const clueIsTrue = hasClue && evaluateClue(targetBluff, targetSecret)
+      // A challenge succeeds when the target left no clue or made a false, verifiable claim.
+      const success = isSuccessfulChallenge(targetBluff, targetSecret)
+      const reason: ChallengeOutcome['reason'] = !hasClue
+        ? 'missing'
+        : clueIsTrue
+          ? 'true'
+          : 'false'
       const basePoints = success ? 4 : -3
       const points = basePoints * multiplier
 
@@ -512,6 +526,8 @@ function App() {
         targetId,
         targetName,
         success,
+        reason,
+        claimText: targetBluff,
         points,
       })
     }
@@ -521,7 +537,7 @@ function App() {
       const wasChallengedSuccessfully = challengeRes.some(
         (c) => c.targetId === p.id && c.success
       )
-      if (bluffText.trim().length > 0 && !wasChallengedSuccessfully) {
+      if (parseClueText(bluffText) !== null && !wasChallengedSuccessfully) {
         deltas[p.id] = (deltas[p.id] ?? 0) + 2 * multiplier
       }
     }
@@ -1099,19 +1115,23 @@ function App() {
       }
 
       if (event.type === 'BLUFF_SUBMITTED') {
+        if (typeof event.text !== 'string') return
+        const submittedText = event.text.trim().slice(0, 40)
+        // The host only accepts blank submissions or clues from the supported templates.
+        if (!isValidClueSubmission(submittedText)) return
         if (selfIdRef.current === 'host') {
           if (previewPhaseRef.current !== 'bluff') return
           const mappedId = peerToPlayerRef.current[from]
           if (from !== 'host' && (mappedId !== event.playerId || activePeerByPlayerRef.current[event.playerId] !== from)) return
           if (!playersRef.current.some((p) => p.id === event.playerId)) return
           if (bluffedPlayersRef.current.includes(event.playerId)) return
-          send({ ...event, text: event.text.slice(0, 40) })
+          send({ ...event, text: submittedText })
         } else if (from !== 'host') {
           return
         }
         const who = event.playerId
         if (bluffedPlayersRef.current.includes(who)) return
-        const nextBluffs = { ...bluffsRef.current, [who]: event.text.slice(0, 40) }
+        const nextBluffs = { ...bluffsRef.current, [who]: submittedText }
         bluffsRef.current = nextBluffs
         setBluffs(nextBluffs)
         const bluffed = bluffedPlayersRef.current.includes(who)
@@ -2499,7 +2519,7 @@ function App() {
     const handlePeekComplete = () => undefined
 
     const handleBluff = (text: string) => {
-      if (!myId || iHaveBluffed) return
+      if (!myId || iHaveBluffed || !isValidClueSubmission(text)) return
       setBluffs((prev) => ({ ...prev, [myId]: text }))
       setBluffedPlayers((prev) => {
         if (prev.includes(myId)) return prev

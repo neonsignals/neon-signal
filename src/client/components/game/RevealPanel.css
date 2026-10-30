@@ -126,7 +126,7 @@
 
 .reveal-panel-challenge {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   padding: 8px 12px;
@@ -149,10 +149,25 @@
   color: var(--color-text);
 }
 
+.reveal-panel-challenge-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+}
+
+.reveal-panel-challenge-claim {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .reveal-panel-challenge-verdict {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.08em;
 }
 
 .reveal-panel-challenge-success .reveal-panel-challenge-verdict {
@@ -183,6 +198,21 @@
   color: var(--color-text-muted);
   font-style: italic;
   margin: var(--space-3) 0 0;
+}
+
+@media (max-width: 480px) {
+  .reveal-panel-challenge {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .reveal-panel-challenge-verdict {
+    grid-column: 1;
+  }
+
+  .reveal-panel-challenge-points {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
 }
 
 @keyframes reveal-flip {
