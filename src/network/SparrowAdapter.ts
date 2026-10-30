@@ -76,6 +76,41 @@ const rtcConfigurator = async (_ctx: { signaller: any }) => {
 
 // These event types are handled and, when appropriate, rebroadcast by
 // the host application. They must never be blindly relayed peer-to-peer.
+
+const MAX_MESSAGE_CHARS = 64 * 1024
+const GAME_EVENT_TYPES = new Set([
+  'HELLO', 'PLAYER_JOINED', 'PLAYER_LEFT', 'NAME_CHANGED', 'GAME_START',
+  'LOCK_SUBMITTED', 'LOCK_STATUS', 'LOCK_CODE_ASSIGNED', 'PEEK_SHARED',
+  'PHASE_CHANGE', 'BLUFF_SUBMITTED', 'CHALLENGE_SUBMITTED', 'GUESS_SUBMITTED',
+  'GUESS_RESOLVED', 'CODES_REVEALED', 'ROUND_COMPLETE', 'GAME_STATE_SYNC',
+  'ROSTER_SYNC', 'ROUND_SNAPSHOT', 'JOIN_APPROVED', 'JOIN_REJECTED', 'ROOM_FULL',
+  'REASON_UPDATED', 'SPECTATOR_JOIN', 'SPECTATOR_LEFT', 'REACTION',
+])
+
+function serializeGameEvent(event: GameEvent): string | null {
+  try {
+    const payload = JSON.stringify(event)
+    if (payload.length > MAX_MESSAGE_CHARS) {
+      console.warn('[SparrowAdapter] Refusing an oversized outgoing message:', event.type)
+      return null
+    }
+    return payload
+  } catch (error) {
+    console.warn('[SparrowAdapter] Could not serialize outgoing message:', error)
+    return null
+  }
+}
+
+function isGameEvent(value: unknown): value is GameEvent {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    typeof value.type === 'string' &&
+    GAME_EVENT_TYPES.has(value.type)
+  )
+}
+
 const HOST_HANDLED_EVENTS = new Set([
   'HELLO',
   'PLAYER_JOINED',
@@ -215,7 +250,8 @@ export class SparrowAdapter implements NetworkAdapter {
   // ---------- Sending and receiving ----------
 
   send(event: GameEvent): void {
-    const payload = JSON.stringify(event)
+    const payload = serializeGameEvent(event)
+    if (!payload) return
     const sendOnConnection = (connection: any) => {
       const channel = connection?.cable?.reliable
       if (!channel) {
@@ -287,7 +323,8 @@ export class SparrowAdapter implements NetworkAdapter {
       )
       return
     }
-    const payload = JSON.stringify(event)
+    const payload = serializeGameEvent(event)
+    if (!payload) return
     const transmit = () => {
       if (channel.readyState !== 'open') return
       try {
@@ -318,7 +355,8 @@ export class SparrowAdapter implements NetworkAdapter {
     )
     const channel = connection?.cable?.reliable
     if (!channel) return
-    const payload = JSON.stringify(event)
+    const payload = serializeGameEvent(event)
+    if (!payload) return
     const transmit = () => {
       if (channel.readyState !== 'open') return
       try {
@@ -388,7 +426,16 @@ export class SparrowAdapter implements NetworkAdapter {
       try {
         const raw = typeof e.data === 'string' ? e.data : null
         if (!raw) return
-        const event = JSON.parse(raw) as GameEvent
+        if (raw.length > MAX_MESSAGE_CHARS) {
+          console.warn('[SparrowAdapter] Ignoring an oversized incoming message')
+          return
+        }
+        const parsed: unknown = JSON.parse(raw)
+        if (!isGameEvent(parsed)) {
+          console.warn('[SparrowAdapter] Ignoring an unknown or malformed event')
+          return
+        }
+        const event = parsed
         if (this.hosted && event.type === 'HELLO' && 'player' in event) {
           this.hostPeerPlayerIds.set(connection, event.player.id)
         }

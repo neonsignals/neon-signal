@@ -67,3 +67,17 @@ svg {
     scroll-behavior: auto !important;
   }
 }
+
+/* Keep small native controls usable on touch screens as well as desktops. */
+.rejoin-code-action {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+}
+
+button:disabled:focus-visible,
+[aria-disabled="true"]:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}

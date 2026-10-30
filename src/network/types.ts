@@ -131,7 +131,7 @@ export type GameEvent =
   | { type: 'REASON_UPDATED'; playerId: PlayerId; reason: string }
   | { type: 'SPECTATOR_JOIN'; spectator: Player }
   | { type: 'SPECTATOR_LEFT'; spectatorId: PlayerId }
-  | { type: 'REACTION'; fromId: PlayerId; emoji: string }
+  | { type: 'REACTION'; fromId: PlayerId; emoji: string; id?: string }
 
 // ---------- Connection State ----------
 

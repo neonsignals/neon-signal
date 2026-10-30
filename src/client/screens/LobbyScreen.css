@@ -45,7 +45,7 @@
   font-size: 14px;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
-  min-height: 36px;
+  min-height: 44px;
 }
 
 .lobby-leave:hover {
@@ -182,4 +182,15 @@
 
 .lobby-return-btn {
   min-width: 220px;
+}
+@media (max-width: 420px) {
+  .lobby {
+    padding: var(--space-4);
+    gap: var(--space-5);
+  }
+
+  .lobby-code {
+    font-size: clamp(24px, 8vw, 36px);
+    letter-spacing: 0.12em;
+  }
 }

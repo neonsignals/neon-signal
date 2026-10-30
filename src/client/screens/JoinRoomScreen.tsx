@@ -4,7 +4,7 @@ import { normalizeRoomCode } from '@/shared/roomCode'
 
 type JoinRoomScreenProps = {
   onBack: () => void
-  onJoin: (code: string, name: string, rejoinCode: string) => void
+  onJoin: (code: string, name: string, rejoinCode: string) => Promise<void>
 }
 
 export function JoinRoomScreen({ onBack, onJoin }: JoinRoomScreenProps) {
@@ -12,13 +12,27 @@ export function JoinRoomScreen({ onBack, onJoin }: JoinRoomScreenProps) {
   const [name, setName] = useState('')
   const [rejoinCode, setRejoinCode] = useState('')
   const [showRejoin, setShowRejoin] = useState(false)
+  const [joining, setJoining] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const normalizedCode = normalizeRoomCode(code)
-  const canJoin = normalizedCode.length >= 6 && name.trim().length > 0
+  const canJoin = normalizedCode.length >= 6 && name.trim().length > 0 && !joining
+
+  async function handleJoin() {
+    if (!canJoin) return
+    setJoining(true)
+    setError(null)
+    try {
+      await onJoin(normalizedCode, name.trim().replace(/\s+/g, ' ').slice(0, 16), rejoinCode.trim())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to join this room. Check the code and try again.')
+      setJoining(false)
+    }
+  }
 
   return (
     <div className="join-screen">
-      <button className="back-btn" onClick={onBack}>
+      <button type="button" className="back-btn" onClick={onBack}>
         ← Back
       </button>
 
@@ -91,12 +105,12 @@ export function JoinRoomScreen({ onBack, onJoin }: JoinRoomScreenProps) {
         variant="primary"
         className="join-btn"
         disabled={!canJoin}
-        onClick={() =>
-          onJoin(normalizedCode, name.trim(), rejoinCode.trim())
-        }
+        onClick={handleJoin}
       >
-        Join Room
+        {joining ? 'Joining…' : 'Join Room'}
       </Button>
+
+      {error && <p className="join-error" role="alert">{error}</p>}
 
       <p className="join-hint">
         Paste the full code from the host, dashes and all.

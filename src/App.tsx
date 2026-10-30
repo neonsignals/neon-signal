@@ -26,7 +26,10 @@ import { useJoinBanner } from './client/hooks/useJoinBanner'
 import { useSound } from './client/hooks/useSound'
 import { PHASES, type Phase } from './shared/phases'
 import { parseRoundNumber } from './shared/roundLabel'
-import { evaluateClue, isSuccessfulChallenge, isValidClueSubmission, parseClueText } from './shared/clues'
+import { isValidClueSubmission } from './shared/clues'
+import { calculateRoundScores, scoreGuess } from './shared/gameRules'
+import { toPublicPlayer, toPublicPlayers } from './shared/publicPlayer'
+import { isAllowedReaction } from './shared/reactions'
 import { formatRoomCode } from './shared/roomCode'
 import {
   getOrCreateToken,
@@ -114,40 +117,6 @@ const PHASE_LABELS: Record<string, string> = {
   challenge: 'Challenge',
   guess: 'Guess',
   reveal: 'Reveal',
-}
-
-function scoreGuess(guess: string, secret: string): GuessResult {
-  const g = guess.split('').map(Number)
-  const s = secret.split('').map(Number)
-  const usedG = [false, false, false]
-  const usedS = [false, false, false]
-  let correctPosition = 0
-  let correctDigit = 0
-
-  for (let i = 0; i < 3; i++) {
-    if (g[i] === s[i]) {
-      correctPosition++
-      usedG[i] = true
-      usedS[i] = true
-    }
-  }
-  for (let i = 0; i < 3; i++) {
-    if (usedG[i]) continue
-    for (let j = 0; j < 3; j++) {
-      if (usedS[j]) continue
-      if (g[i] === s[j]) {
-        correctDigit++
-        usedG[i] = true
-        usedS[j] = true
-        break
-      }
-    }
-  }
-  const points =
-    correctPosition * 3 +
-    correctDigit * 1 +
-    (correctPosition === 3 ? 5 : 0)
-  return { correctPosition, correctDigit, points }
 }
 
 function App() {
@@ -475,88 +444,27 @@ function App() {
   }
 
   function computeAndBroadcastScores() {
-    const isDouble = DOUBLE_ROUNDS.includes(roundNumberRef.current)
-    const multiplier = isDouble ? 2 : 1
+    const result = calculateRoundScores({
+      players: playersRef.current,
+      scores: scoresRef.current,
+      codesByPlayer: codesByPlayerRef.current,
+      guessesByPlayer: guessesRef.current,
+      bluffs: bluffsRef.current,
+      challenges: challengesRef.current,
+      multiplier: DOUBLE_ROUNDS.includes(roundNumberRef.current) ? 2 : 1,
+    })
 
-    const deltas: Record<string, number> = {}
-    const newTotals: Record<string, number> = { ...scoresRef.current }
-    const challengeRes: ChallengeOutcome[] = []
-
-    for (const p of playersRef.current) {
-      deltas[p.id] = 0
-    }
-
-    for (const [guesserId, list] of Object.entries(guessesRef.current)) {
-      for (const g of list) {
-        const secret = codesByPlayerRef.current[g.targetId]
-        if (!secret || !/^[1-9]{3}$/.test(g.code)) continue
-        const verifiedResult = scoreGuess(g.code, secret)
-        const gain = verifiedResult.points * multiplier
-        deltas[guesserId] = (deltas[guesserId] ?? 0) + gain
-      }
-    }
-
-    for (const [challengerId, targetId] of Object.entries(
-      challengesRef.current
-    )) {
-      const targetBluff = bluffsRef.current[targetId] ?? ''
-      const targetSecret = codesByPlayerRef.current[targetId] ?? ''
-      const hasClue = targetBluff.trim().length > 0
-      const clueIsTrue = hasClue && evaluateClue(targetBluff, targetSecret)
-      // A challenge succeeds when the target left no clue or made a false, verifiable claim.
-      const success = isSuccessfulChallenge(targetBluff, targetSecret)
-      const reason: ChallengeOutcome['reason'] = !hasClue
-        ? 'missing'
-        : clueIsTrue
-          ? 'true'
-          : 'false'
-      const basePoints = success ? 4 : -3
-      const points = basePoints * multiplier
-
-      deltas[challengerId] = (deltas[challengerId] ?? 0) + points
-
-      const challengerName =
-        playersRef.current.find((p) => p.id === challengerId)?.name ?? '???'
-      const targetName =
-        playersRef.current.find((p) => p.id === targetId)?.name ?? '???'
-
-      challengeRes.push({
-        challengerId,
-        challengerName,
-        targetId,
-        targetName,
-        success,
-        reason,
-        claimText: targetBluff,
-        points,
-      })
-    }
-
-    for (const p of playersRef.current) {
-      const bluffText = bluffsRef.current[p.id] ?? ''
-      const wasChallengedSuccessfully = challengeRes.some(
-        (c) => c.targetId === p.id && c.success
-      )
-      if (parseClueText(bluffText) !== null && !wasChallengedSuccessfully) {
-        deltas[p.id] = (deltas[p.id] ?? 0) + 2 * multiplier
-      }
-    }
-
-    for (const [id, delta] of Object.entries(deltas)) {
-      newTotals[id] = (newTotals[id] ?? 0) + delta
-    }
-
-    scoresRef.current = newTotals
-    setScores(newTotals)
-    setRoundDeltas(deltas)
-    setChallengeResults(challengeRes)
+    scoresRef.current = result.scores
+    setScores(result.scores)
+    setRoundDeltas(result.deltas)
+    setChallengeResults(result.challengeResults)
 
     send({
       type: 'ROUND_COMPLETE',
       roundNumber: roundNumberRef.current,
-      scores: newTotals,
-      deltas,
-      challengeResults: challengeRes,
+      scores: result.scores,
+      deltas: result.deltas,
+      challengeResults: result.challengeResults,
     })
   }
 
@@ -662,7 +570,7 @@ function App() {
       if (heldPlayersRef.current.length > 0) {
         heldPlayersRef.current = []
         setHeldPlayers([])
-        send({ type: 'ROSTER_SYNC', players: playersRef.current, heldPlayers: [] })
+        syncRoster(playersRef.current, [])
       }
 
       const nextRound = round + 1
@@ -855,6 +763,7 @@ function App() {
       // double-render when the host echoes it back. Host rebroadcast is
       // authoritative, so all players accept it.
       if (event.type === 'REACTION') {
+        if (!isAllowedReaction(event.emoji) || (event.id && event.id.length > 128)) return
         const reactionId =
           (event as { id?: string }).id ??
           `${event.fromId}-${event.emoji}-${Date.now()}`
@@ -894,8 +803,10 @@ function App() {
       if (event.type === 'SPECTATOR_JOIN') {
         const s = event.spectator
         if (selfIdRef.current === 'host') {
-          if (s.role !== 'spectator') return
+          if (!s || s.role !== 'spectator' || typeof s.name !== 'string') return
           if (!/^spec-[a-z0-9]+$/i.test(s.id)) return
+          const safeSpectatorName = s.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16)
+          if (!safeSpectatorName) return
           if (playersRef.current.some((p) => p.id === s.id)) return
           if (pendingPeerByPlayerRef.current[s.id]) return
 
@@ -912,29 +823,13 @@ function App() {
           // Fall through on duplicate joins too — the client retries, and
           // each retry should get a fresh GAME_STATE_SYNC back.
         }
-        const nextSpectators = spectatorsRef.current.some((x) => x.id === s.id)
+        const safeSpectator: Player = { ...s, name: s.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16), playerToken: '' }
+        const nextSpectators = spectatorsRef.current.some((x) => x.id === safeSpectator.id)
           ? spectatorsRef.current
-          : [...spectatorsRef.current, s]
+          : [...spectatorsRef.current, safeSpectator]
         spectatorsRef.current = nextSpectators
         setSpectators(nextSpectators)
-        if (selfId === 'host') {
-          send({
-            type: 'GAME_STATE_SYNC',
-            gameStarted: gameStartedRef.current,
-            gameOver: gameOverRef.current,
-            phase: previewPhaseRef.current,
-            deadlineAt: phaseDeadlineAtRef.current ?? undefined,
-            roundLabel: `R${roundNumberRef.current}/5`,
-            lockedPlayers: lockedPlayersRef.current,
-            bluffedPlayers: bluffedPlayersRef.current,
-            bluffs: bluffsRef.current,
-            players: playersRef.current,
-            challenges: challengesRef.current,
-            roundNumber: roundNumberRef.current,
-            scores: scoresRef.current,
-            spectators: nextSpectators,
-          })
-        }
+        if (selfId === 'host') broadcastGameState(nextSpectators)
         return
       }
 
@@ -944,24 +839,7 @@ function App() {
         const nextSpectators = spectatorsRef.current.filter((s) => s.id !== event.spectatorId)
         spectatorsRef.current = nextSpectators
         setSpectators(nextSpectators)
-        if (selfIdRef.current === 'host') {
-          send({
-            type: 'GAME_STATE_SYNC',
-            gameStarted: gameStartedRef.current,
-            gameOver: gameOverRef.current,
-            phase: previewPhaseRef.current,
-            deadlineAt: phaseDeadlineAtRef.current ?? undefined,
-            roundLabel: `R${roundNumberRef.current}/5`,
-            lockedPlayers: lockedPlayersRef.current,
-            bluffedPlayers: bluffedPlayersRef.current,
-            bluffs: bluffsRef.current,
-            players: playersRef.current,
-            challenges: challengesRef.current,
-            roundNumber: roundNumberRef.current,
-            scores: scoresRef.current,
-            spectators: nextSpectators,
-          })
-        }
+        if (selfIdRef.current === 'host') broadcastGameState(nextSpectators)
         return
       }
 
@@ -1269,8 +1147,22 @@ function App() {
 
       if (event.type === 'HELLO' || event.type === 'PLAYER_JOINED') {
         if (event.type === 'PLAYER_JOINED' && selfIdRef.current === 'host' && from !== 'host') return
-        const incoming = event.player
-        const id = incoming.id || from
+        const incomingRaw = event.player
+        if (incomingRaw.role !== 'player' || typeof incomingRaw.name !== 'string') return
+        const safeIncomingName = incomingRaw.name.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16)
+        if (!safeIncomingName || typeof incomingRaw.id !== 'string' || incomingRaw.id.length > 64) return
+        const id = incomingRaw.id || from
+        const incoming: Player = {
+          ...incomingRaw,
+          id,
+          name: safeIncomingName,
+          role: 'player',
+          isHost: from === 'host' && id === 'host',
+          score: from === 'host' && Number.isFinite(incomingRaw.score) ? incomingRaw.score : 0,
+          joinedAt: Number.isFinite(incomingRaw.joinedAt) ? incomingRaw.joinedAt : Date.now(),
+          playerToken: typeof incomingRaw.playerToken === 'string' ? incomingRaw.playerToken.slice(0, 128) : '',
+          status: 'active',
+        }
 
         const mine = myPlayerIdRef.current
         if (id === mine) return
@@ -1364,7 +1256,7 @@ function App() {
                 isHost: mine === 'host',
                 score: 0,
                 joinedAt: mine === 'host' ? 1 : 2,
-                playerToken: getOrCreateToken(),
+                playerToken: '',
                 status: 'active',
               },
             })
@@ -1456,22 +1348,7 @@ function App() {
         if (nextSpectators.length !== spectatorsRef.current.length) {
           spectatorsRef.current = nextSpectators
           setSpectators(nextSpectators)
-          send({
-            type: 'GAME_STATE_SYNC',
-            gameStarted: gameStartedRef.current,
-            gameOver: gameOverRef.current,
-            phase: previewPhaseRef.current,
-            deadlineAt: phaseDeadlineAtRef.current ?? undefined,
-            roundLabel: `R${roundNumberRef.current}/5`,
-            lockedPlayers: lockedPlayersRef.current,
-            bluffedPlayers: bluffedPlayersRef.current,
-            bluffs: bluffsRef.current,
-            players: playersRef.current,
-            challenges: challengesRef.current,
-            roundNumber: roundNumberRef.current,
-            scores: scoresRef.current,
-            spectators: nextSpectators,
-          })
+          broadcastGameState(nextSpectators)
         }
         delete peerToPlayerRef.current[peerId]
         return
@@ -1641,7 +1518,27 @@ function App() {
 
   function syncRoster(roster: Player[], held: string[]) {
     if (selfIdRef.current !== 'host') return
-    send({ type: 'ROSTER_SYNC', players: roster, heldPlayers: held })
+    send({ type: 'ROSTER_SYNC', players: toPublicPlayers(roster), heldPlayers: held })
+  }
+
+  function broadcastGameState(spectatorRoster: Player[] = spectatorsRef.current) {
+    if (selfIdRef.current !== 'host') return
+    send({
+      type: 'GAME_STATE_SYNC',
+      gameStarted: gameStartedRef.current,
+      gameOver: gameOverRef.current,
+      phase: previewPhaseRef.current,
+      deadlineAt: phaseDeadlineAtRef.current ?? undefined,
+      roundLabel: `R${roundNumberRef.current}/5`,
+      lockedPlayers: lockedPlayersRef.current,
+      bluffedPlayers: bluffedPlayersRef.current,
+      bluffs: bluffsRef.current,
+      players: toPublicPlayers(playersRef.current),
+      challenges: challengesRef.current,
+      roundNumber: roundNumberRef.current,
+      scores: scoresRef.current,
+      spectators: toPublicPlayers(spectatorRoster),
+    })
   }
 
   function buildSnapshot(roster: Player[], held: string[]): GameEvent {
@@ -1657,10 +1554,10 @@ function App() {
       bluffs: bluffsRef.current,
       challenges: challengesRef.current,
       codesByPlayer: previewPhaseRef.current === 'reveal' ? codesByPlayerRef.current : {},
-      players: roster,
+      players: toPublicPlayers(roster),
       heldPlayers: held,
       scores: scoresRef.current,
-      spectators: spectatorsRef.current,
+      spectators: toPublicPlayers(spectatorsRef.current),
     }
   }
 
@@ -1738,7 +1635,7 @@ function App() {
       ...prev.slice(-19),
       { id, emoji, fromName: senderName },
     ])
-    send({ type: 'REACTION', fromId: myPlayerId, emoji, id } as GameEvent)
+    if (isAllowedReaction(emoji)) send({ type: 'REACTION', fromId: myPlayerId, emoji, id })
   }
 
   async function handleSpectatorJoin(code: string, name: string) {
@@ -1777,7 +1674,7 @@ function App() {
       isHost: false,
       score: 0,
       joinedAt: Date.now(),
-      playerToken: getOrCreateToken(),
+      playerToken: '',
       status: 'active',
     }
 
@@ -1851,6 +1748,7 @@ function App() {
               navigator.clipboard?.writeText(myRejoinCode)
             }
           }}
+          className="rejoin-code-action"
           style={{
             background: 'transparent',
             border: '1px solid var(--color-cyan)',
@@ -1870,6 +1768,7 @@ function App() {
             setMyRejoinCode(fresh)
           }}
           title="Generate a new rejoin code for this tab"
+          className="rejoin-code-action rejoin-code-action-new"
           style={{
             background: 'transparent',
             border: '1px solid var(--color-magenta)',
@@ -2048,7 +1947,8 @@ function App() {
               setScreen('lobby')
             }
           } catch (err) {
-            alert(`Failed to join: ${(err as Error).message}`)
+            await leaveRoom().catch(() => undefined)
+            throw new Error(`Failed to join: ${err instanceof Error ? err.message : 'Unknown connection error'}`)
           }
         }}
       />
@@ -2422,7 +2322,7 @@ function App() {
                   })
                   send({
                     type: 'ROSTER_SYNC',
-                    players: playersRef.current,
+                    players: toPublicPlayers(playersRef.current),
                     heldPlayers: [],
                   })
                 }
@@ -2955,9 +2855,10 @@ function App() {
   // ---- SCREEN: LANDING ----
   return (
     <LandingScreen
-      onCreateRoom={async () => {
+      onCreateRoom={async (requestedName) => {
+        const name = requestedName.trim().replace(/\s+/g, ' ').slice(0, 16)
+        if (!name) throw new Error('Please enter a player name.')
         try {
-          const name = prompt('Your name?')?.trim() || 'HOST'
           setPlayerName(name)
           setConnectionNotice(null)
           gameOverRef.current = false
@@ -2987,10 +2888,11 @@ function App() {
           setRoundNumber(1)
           setScores({})
           clearAll()
-          send({ type: 'PLAYER_JOINED', player: hostPlayer })
+          send({ type: 'PLAYER_JOINED', player: toPublicPlayer(hostPlayer) })
           setScreen('lobby')
         } catch (err) {
-          alert(`Failed to create room: ${(err as Error).message}`)
+          await leaveRoom().catch(() => undefined)
+          throw new Error(`Failed to create room: ${err instanceof Error ? err.message : 'Unknown connection error'}`)
         }
       }}
       onJoinRoom={() => setScreen('join')}

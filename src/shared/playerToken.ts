@@ -1,20 +1,30 @@
 const KEY = 'neon-signal:player-token'
 
 /**
- * Get (or create) a stable per-browser token.
- * This persists in localStorage so the same browser is always
- * recognised as the same player, even after refresh or leaving.
+ * Get or create a stable per-browser rejoin token.
+ * This legacy helper is kept for compatibility, but now uses the browser's
+ * cryptographically secure random-number generator instead of Math.random.
  */
 export function getPlayerToken(): string {
   try {
     let token = localStorage.getItem(KEY)
     if (!token) {
-      token = `p-${Math.random().toString(36).slice(2, 10)}`
+      const bytes = new Uint8Array(16)
+      if (!globalThis.crypto?.getRandomValues) {
+        throw new Error('Secure random-number generation is unavailable. Open Neon Signal over HTTPS in an up-to-date browser.')
+      }
+      globalThis.crypto.getRandomValues(bytes)
+      token = `P${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`
       localStorage.setItem(KEY, token)
     }
     return token
-  } catch {
-    // localStorage unavailable (private mode fallback)
-    return `p-${Math.random().toString(36).slice(2, 10)}`
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Secure random-number')) throw error
+    const bytes = new Uint8Array(16)
+    if (!globalThis.crypto?.getRandomValues) {
+      throw new Error('Secure random-number generation is unavailable. Open Neon Signal over HTTPS in an up-to-date browser.')
+    }
+    globalThis.crypto.getRandomValues(bytes)
+    return `P${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`
   }
 }

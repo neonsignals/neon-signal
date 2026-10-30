@@ -72,3 +72,115 @@
   border-color: var(--color-cyan);
   color: var(--color-cyan);
 }
+.landing-description {
+  max-width: 520px;
+  margin: 14px auto 0;
+  color: var(--color-text-muted);
+  font-size: 15px;
+  line-height: 1.6;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+}
+
+.create-room-dialog {
+  width: min(440px, calc(100vw - 28px));
+  max-width: none;
+  margin: auto;
+  padding: 0;
+  color: var(--color-text);
+  background: #0d1530;
+  border: 1px solid rgba(0, 245, 212, 0.4);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65), 0 0 32px rgba(0, 245, 212, 0.12);
+}
+
+.create-room-dialog::backdrop {
+  background: rgba(3, 7, 20, 0.86);
+  backdrop-filter: blur(7px);
+}
+
+.create-room-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 26px;
+}
+
+.create-room-eyebrow {
+  color: var(--color-cyan);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.create-room-form h2 {
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+
+.create-room-description {
+  margin-bottom: 8px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.create-room-label {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.create-room-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-bright);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 16px;
+}
+
+.create-room-input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.create-room-error {
+  padding: 10px 12px;
+  color: #ffdce5;
+  background: rgba(255, 51, 102, 0.12);
+  border: 1px solid rgba(255, 51, 102, 0.45);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.create-room-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+@media (max-width: 480px) {
+  .landing {
+    background-attachment: scroll;
+    gap: var(--space-8);
+  }
+
+  .create-room-form {
+    padding: 20px;
+  }
+
+  .create-room-actions {
+    flex-direction: column-reverse;
+  }
+
+  .create-room-actions .btn {
+    width: 100%;
+  }
+}

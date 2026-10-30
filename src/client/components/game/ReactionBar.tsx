@@ -1,6 +1,5 @@
+import { ALLOWED_REACTIONS } from '@/shared/reactions'
 import './ReactionBar.css'
-
-const REACTIONS = ['😂', '😱', '🔥', '👏', '💀', '🧠', '🤯', '⚡']
 
 type ReactionBarProps = {
   onSend: (emoji: string) => void
@@ -9,7 +8,7 @@ type ReactionBarProps = {
 export function ReactionBar({ onSend }: ReactionBarProps) {
   return (
     <div className="reaction-bar" aria-label="Send a reaction">
-      {REACTIONS.map((emoji) => (
+      {ALLOWED_REACTIONS.map((emoji) => (
         <button
           key={emoji}
           type="button"

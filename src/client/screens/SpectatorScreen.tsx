@@ -185,6 +185,7 @@ export function SpectatorScreen({
           <input
             className="field-input"
             type="text"
+            autoComplete="nickname"
             value={name}
             onChange={(e) => setName(e.target.value.slice(0, 16))}
             placeholder="SPECTATOR"
@@ -201,9 +202,9 @@ export function SpectatorScreen({
           {joining ? 'Connecting…' : 'Watch Room'}
         </Button>
 
-        {error && <p className="spectator-join-error">{error}</p>}
+        {error && <p className="spectator-join-error" role="alert">{error}</p>}
 
-        <button className="spectator-back" onClick={onLeave}>
+        <button type="button" className="spectator-back" onClick={onLeave}>
           ← Back to Home
         </button>
       </div>

@@ -12,7 +12,16 @@ export type SavedSession = {
 }
 
 function generateToken(): string {
-  return `P${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+  // Rejoin codes are used as bearer secrets. Prefer 128 bits from the
+  // browser's cryptographically secure random-number generator.
+  const bytes = new Uint8Array(16)
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes)
+    return `P${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`
+  }
+
+  // Older/insecure contexts should not silently issue a weak rejoin token.
+  throw new Error('Secure random-number generation is unavailable in this browser. Open Neon Signal over HTTPS or use an up-to-date browser.')
 }
 
 export function getOrCreateToken(): string {

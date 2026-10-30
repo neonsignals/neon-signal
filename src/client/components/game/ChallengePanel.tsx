@@ -70,6 +70,7 @@ export function ChallengePanel({
               ) : (
                 <button
                   type="button"
+                  aria-label={`Challenge ${r.name}'s clue`}
                   className="challenge-panel-btn"
                   disabled={locked}
                   onClick={() => onChallenge(r.id)}

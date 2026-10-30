@@ -86,7 +86,8 @@
 }
 
 .challenge-panel-btn {
-  padding: 8px 14px;
+  padding: 10px 14px;
+  min-height: 44px;
   border-radius: var(--radius-sm);
   background: var(--color-red);
   color: white;
