@@ -47,8 +47,8 @@ export function TableContent({ phase }: TableContentProps) {
     return (
       <div className="table-phase">
         <p className="table-phase-title">CHALLENGE</p>
-        <p className="table-phase-hint">Tap a rival to accuse</p>
-        <div className="table-preview-challenge">⚡ TAP A RIVAL</div>
+        <p className="table-phase-hint">Challenge one player who gave no clue</p>
+        <div className="table-preview-challenge">⚡ CHOOSE ONE PLAYER</div>
       </div>
     )
   }

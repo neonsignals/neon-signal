@@ -62,3 +62,13 @@
   position: relative;
   z-index: 1;
 }
+
+.landing-tutorial-button {
+  border-color: rgba(255, 255, 255, 0.32);
+  color: var(--color-text);
+}
+
+.landing-tutorial-button:hover {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}

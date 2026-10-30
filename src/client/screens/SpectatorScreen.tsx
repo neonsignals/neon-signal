@@ -14,10 +14,12 @@ import './SpectatorScreen.css'
 type SpectatorScreenProps = {
   joined: boolean
   players: Player[]
+  scores: Record<string, number>
   spectators: Player[]
   phase: Phase
   roundLabel: string
   gameStarted: boolean
+  gameOver: boolean
   roomCode: string | null
   reactions: ReactionEntry[]
   onExpireReaction: (id: string) => void
@@ -29,10 +31,12 @@ type SpectatorScreenProps = {
 export function SpectatorScreen({
   joined,
   players,
+  scores,
   spectators,
   phase,
   roundLabel,
   gameStarted,
+  gameOver,
   roomCode,
   reactions,
   onExpireReaction,
@@ -89,7 +93,29 @@ export function SpectatorScreen({
           </div>
         </header>
 
-        {!gameStarted ? (
+        {gameOver ? (
+          <div className="spectator-finished">
+            <div className="spectator-finished-trophy">🏆</div>
+            <h1>GAME COMPLETE</h1>
+            <p className="spectator-finished-subtitle">
+              The five rounds are over. Here are the final scores.
+            </p>
+            <ol className="spectator-final-list">
+              {[...players]
+                .sort((a, b) => (scores[b.id] ?? 0) - (scores[a.id] ?? 0))
+                .map((player, index) => (
+                  <li key={player.id}>
+                    <span className="spectator-final-rank">{index + 1}.</span>
+                    <span className="spectator-final-name">{player.name}</span>
+                    <strong>{scores[player.id] ?? 0} pts</strong>
+                  </li>
+                ))}
+            </ol>
+            <p className="spectator-finished-footer">
+              You can leave now, or stay connected while the host prepares another game.
+            </p>
+          </div>
+        ) : !gameStarted ? (
           <div className="spectator-waiting">
             <p className="spectator-waiting-title">Waiting for the game…</p>
             <p className="spectator-waiting-subtitle">
@@ -103,7 +129,7 @@ export function SpectatorScreen({
                 id: p.id,
                 name: p.name,
                 isHost: p.isHost,
-                score: p.score,
+                score: scores[p.id] ?? 0,
                 joinedAt: p.joinedAt,
                 bluff: null,
               }))}

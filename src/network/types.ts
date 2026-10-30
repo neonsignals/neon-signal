@@ -91,6 +91,7 @@ export type GameEvent =
   | {
       type: 'GAME_STATE_SYNC'
       gameStarted: boolean
+      gameOver?: boolean
       deadlineAt?: number
       phase: string
       roundLabel: string
@@ -124,6 +125,7 @@ export type GameEvent =
 
   | { type: 'JOIN_APPROVED'; playerId: PlayerId }
   | { type: 'JOIN_REJECTED'; playerId: PlayerId }
+  | { type: 'ROOM_FULL'; playerId: PlayerId }
   | { type: 'REASON_UPDATED'; playerId: PlayerId; reason: string }
   | { type: 'SPECTATOR_JOIN'; spectator: Player }
   | { type: 'SPECTATOR_LEFT'; spectatorId: PlayerId }

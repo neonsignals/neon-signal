@@ -25,6 +25,7 @@ import { useNetwork } from './client/hooks/useNetwork'
 import { useJoinBanner } from './client/hooks/useJoinBanner'
 import { useSound } from './client/hooks/useSound'
 import { PHASES, type Phase } from './shared/phases'
+import { parseRoundNumber } from './shared/roundLabel'
 import { formatRoomCode } from './shared/roomCode'
 import {
   getOrCreateToken,
@@ -94,6 +95,7 @@ type PopEntry = {
 }
 
 const TOTAL_ROUNDS = 5
+const MAX_PLAYERS = 8
 const DOUBLE_ROUNDS = [3]
 const PHASE_DURATION_MS: Record<Phase, number> = {
   lock: 15_000,
@@ -155,6 +157,7 @@ function App() {
   const [pendingPlayers, setPendingPlayers] = useState<Player[]>([])
   const [spectators, setSpectators] = useState<Player[]>([])
   const [spectatorJoined, setSpectatorJoined] = useState(false)
+  const [spectatorGameOver, setSpectatorGameOver] = useState(false)
   const [lockedPlayers, setLockedPlayers] = useState<string[]>([])
   const [codesByPlayer, setCodesByPlayer] = useState<Record<string, string>>({})
   const [myCode, setMyCode] = useState<string | null>(null)
@@ -236,6 +239,7 @@ function App() {
   const phaseDeadlineAtRef = useRef<number | null>(phaseDeadlineAt)
   const handledPhaseKeyRef = useRef<string | null>(null)
   const isSpectatorRef = useRef<boolean>(false)
+  const gameOverRef = useRef<boolean>(false)
 
   useEffect(() => { playersRef.current = players }, [players])
   useEffect(() => { gameStartedRef.current = gameStarted }, [gameStarted])
@@ -337,7 +341,9 @@ function App() {
       case 'lock':
         if (roundNumber !== lastSpokenRoundRef.current) {
           lastSpokenRoundRef.current = roundNumber
-          if (isDouble) {
+          if (roundNumber === TOTAL_ROUNDS) {
+            speak(`Last round. Round ${roundNumber} of ${TOTAL_ROUNDS}. Pick your secret codes. This is your final chance to score.`)
+          } else if (isDouble) {
             speak(`Round ${roundNumber}. Points are doubled. Pick your codes`)
           } else {
             speak(`Round ${roundNumber}. Pick your secret codes`)
@@ -354,7 +360,7 @@ function App() {
         break
       case 'challenge':
         play('challenge')
-        speak('Challenge phase. Call a liar out')
+        speak('Challenge phase. You may challenge one player who left no clue')
         break
       case 'guess':
         play('select')
@@ -378,11 +384,11 @@ function App() {
       for (const c of challengeResults) {
         if (c.success) {
           play('correct')
-          speak(`${c.challengerName} caught ${c.targetName} lying`)
+          speak(`${c.challengerName} successfully challenged ${c.targetName}`)
           triggerShake('heavy')
         } else {
           play('wrong')
-          speak(`${c.challengerName} challenged ${c.targetName} wrongly`)
+          speak(`${c.challengerName} made an unsuccessful challenge against ${c.targetName}`)
           triggerShake('light')
         }
       }
@@ -434,6 +440,7 @@ function App() {
   function resetGameStateLocally() {
     setGameStarted(false)
     gameStartedRef.current = false
+    gameOverRef.current = false
     setPhaseDeadlineAt(null)
     phaseDeadlineAtRef.current = null
     setRoundNumber(1)
@@ -628,6 +635,7 @@ function App() {
 
     if (phase === 'reveal') {
       if (round >= TOTAL_ROUNDS) {
+        gameOverRef.current = true
         phaseDeadlineAtRef.current = null
         setPhaseDeadlineAt(null)
         send({ type: 'PHASE_CHANGE', phase: 'game-over', roundLabel: 'FINAL' })
@@ -679,7 +687,7 @@ function App() {
       const hostAuthorityEvents = new Set([
         'GAME_START', 'PHASE_CHANGE', 'LOCK_STATUS', 'LOCK_CODE_ASSIGNED', 'CODES_REVEALED',
         'GUESS_RESOLVED', 'ROUND_COMPLETE', 'GAME_STATE_SYNC',
-        'ROSTER_SYNC', 'ROUND_SNAPSHOT', 'JOIN_APPROVED', 'JOIN_REJECTED',
+        'ROSTER_SYNC', 'ROUND_SNAPSHOT', 'JOIN_APPROVED', 'JOIN_REJECTED', 'ROOM_FULL',
       ])
       if (hostAuthorityEvents.has(event.type) && from !== 'host') return
 
@@ -690,6 +698,8 @@ function App() {
         if (isSpectatorRef.current || screen === 'spectator') {
           const spectatorDeadlineAt =
             event.deadlineAt ?? Date.now() + PHASE_DURATION_MS.lock
+          gameOverRef.current = false
+          setSpectatorGameOver(false)
           setGameStarted(true)
           gameStartedRef.current = true
           setSpectatorJoined(true)
@@ -702,6 +712,7 @@ function App() {
           return
         }
         const deadlineAt = event.deadlineAt ?? Date.now() + PHASE_DURATION_MS.lock
+        gameOverRef.current = false
         setGameStarted(true)
         gameStartedRef.current = true
         setPreviewPhase('lock')
@@ -743,12 +754,22 @@ function App() {
         // arrives and we somehow missed GAME_START.
         if (isSpectatorRef.current || screen === 'spectator') {
           if (event.phase === 'lobby') {
+            gameOverRef.current = false
+            setSpectatorGameOver(false)
             setGameStarted(false)
             gameStartedRef.current = false
-            setSpectatorJoined(false)
+            setSpectatorJoined(true)
+            setPreviewPhase('lock')
+            previewPhaseRef.current = 'lock'
+            setRoundNumber(1)
+            roundNumberRef.current = 1
+            setPhaseDeadlineAt(null)
+            phaseDeadlineAtRef.current = null
             return
           }
           if (event.phase === 'game-over') {
+            gameOverRef.current = true
+            setSpectatorGameOver(true)
             phaseDeadlineAtRef.current = null
             setPhaseDeadlineAt(null)
             if (!gameStartedRef.current) {
@@ -763,6 +784,8 @@ function App() {
             gameStartedRef.current = true
             setSpectatorJoined(true)
           }
+          gameOverRef.current = false
+          setSpectatorGameOver(false)
           const sPhase = event.phase as Phase
           const sDeadline = event.deadlineAt ?? Date.now() + PHASE_DURATION_MS[sPhase]
           setPreviewPhase(sPhase)
@@ -770,8 +793,11 @@ function App() {
           setPhaseDeadlineAt(sDeadline)
           phaseDeadlineAtRef.current = sDeadline
           if (event.roundLabel) {
-            const sm = event.roundLabel.match(/^R(\d+)\//)
-            const sRn = sm ? parseInt(sm[1], 5) : roundNumberRef.current
+            const sRn = parseRoundNumber(
+              event.roundLabel,
+              roundNumberRef.current,
+              TOTAL_ROUNDS
+            )
             setRoundNumber(sRn)
             roundNumberRef.current = sRn
           }
@@ -792,8 +818,11 @@ function App() {
         }
 
         const phase = event.phase as Phase
-        const m = event.roundLabel.match(/^R(\d+)\//)
-        const rn = m ? parseInt(m[1], 5) : roundNumberRef.current
+        const rn = parseRoundNumber(
+          event.roundLabel,
+          roundNumberRef.current,
+          TOTAL_ROUNDS
+        )
         const deadlineAt = event.deadlineAt ?? Date.now() + PHASE_DURATION_MS[phase]
         roundNumberRef.current = rn
         previewPhaseRef.current = phase
@@ -876,6 +905,7 @@ function App() {
           send({
             type: 'GAME_STATE_SYNC',
             gameStarted: gameStartedRef.current,
+            gameOver: gameOverRef.current,
             phase: previewPhaseRef.current,
             deadlineAt: phaseDeadlineAtRef.current ?? undefined,
             roundLabel: `R${roundNumberRef.current}/5`,
@@ -902,6 +932,7 @@ function App() {
           send({
             type: 'GAME_STATE_SYNC',
             gameStarted: gameStartedRef.current,
+            gameOver: gameOverRef.current,
             phase: previewPhaseRef.current,
             deadlineAt: phaseDeadlineAtRef.current ?? undefined,
             roundLabel: `R${roundNumberRef.current}/5`,
@@ -930,6 +961,8 @@ function App() {
       }
 
       if (event.type === 'GAME_STATE_SYNC') {
+        gameOverRef.current = event.gameOver === true
+        setSpectatorGameOver(event.gameOver === true)
         setGameStarted(event.gameStarted)
         gameStartedRef.current = event.gameStarted
         setPreviewPhase(event.phase as Phase)
@@ -1193,6 +1226,18 @@ function App() {
         return
       }
 
+      if (event.type === 'ROOM_FULL') {
+        if (event.playerId !== myPlayerIdRef.current) return
+        alert(`This room already has ${MAX_PLAYERS} players. Please join another room.`)
+        clearSession()
+        void leaveRoom()
+        setMyPlayerId(null)
+        setPlayers([])
+        setPendingPlayers([])
+        setScreen('landing')
+        return
+      }
+
       if (event.type === 'REASON_UPDATED') {
         setPendingPlayers((prev) =>
           prev.map((p) =>
@@ -1256,6 +1301,11 @@ function App() {
 
           if (rosterAlreadyHasId) {
             if (activePeerByPlayerRef.current[id] === from) return
+            return
+          }
+
+          if (playersRef.current.length >= MAX_PLAYERS) {
+            network.sendToPeer(from, { type: 'ROOM_FULL', playerId: id })
             return
           }
 
@@ -1389,6 +1439,7 @@ function App() {
           send({
             type: 'GAME_STATE_SYNC',
             gameStarted: gameStartedRef.current,
+            gameOver: gameOverRef.current,
             phase: previewPhaseRef.current,
             deadlineAt: phaseDeadlineAtRef.current ?? undefined,
             roundLabel: `R${roundNumberRef.current}/5`,
@@ -1601,6 +1652,15 @@ function App() {
       return
     }
 
+    const alreadyInRoster = playersRef.current.some((player) => player.id === p.id)
+    if (!alreadyInRoster && playersRef.current.length >= MAX_PLAYERS) {
+      network.sendToPeer(pendingPeerId, { type: 'ROOM_FULL', playerId: p.id })
+      delete pendingPeerByPlayerRef.current[p.id]
+      setPendingPlayers((prev) => prev.filter((x) => x.id !== p.id))
+      setConnectionNotice(`Unable to rejoin ${p.name}: this room already has ${MAX_PLAYERS} players.`)
+      return
+    }
+
     const activePlayer: Player = { ...p, status: 'active' }
     peerToPlayerRef.current[pendingPeerId] = p.id
     activePeerByPlayerRef.current[p.id] = pendingPeerId
@@ -1663,6 +1723,8 @@ function App() {
 
   async function handleSpectatorJoin(code: string, name: string) {
     clearSession()
+    gameOverRef.current = false
+    setSpectatorGameOver(false)
     setPlayers([])
     setPendingPlayers([])
     setLockedPlayers([])
@@ -1723,6 +1785,8 @@ function App() {
     pendingPeerByPlayerRef.current = {}
     setSpectators([])
     setSpectatorJoined(false)
+    setSpectatorGameOver(false)
+    gameOverRef.current = false
     setMyPlayerId(null)
     setScreen('landing')
   }
@@ -1858,6 +1922,7 @@ function App() {
           ...p,
           score: scores[p.id] ?? 0,
         }))}
+        scores={scores}
         spectators={spectators.map((s) => ({
           ...s,
           score: scores[s.id] ?? 0,
@@ -1865,6 +1930,7 @@ function App() {
         phase={previewPhase}
         roundLabel={`R${roundNumber}/5`}
         gameStarted={gameStarted}
+        gameOver={spectatorGameOver}
         roomCode={roomCode}
         reactions={reactions}
         onExpireReaction={(id) =>
@@ -2225,6 +2291,7 @@ function App() {
           onStartGame={() => {
             if (selfId !== 'host' || players.length < 2) return
 
+            gameOverRef.current = false
             setLockedPlayers([])
             setCodesByPlayer({})
             setMyCode(null)
@@ -2873,6 +2940,7 @@ function App() {
           const name = prompt('Your name?')?.trim() || 'HOST'
           setPlayerName(name)
           setConnectionNotice(null)
+          gameOverRef.current = false
           peerToPlayerRef.current = {}
           activePeerByPlayerRef.current = {}
           pendingPeerByPlayerRef.current = {}
@@ -2908,6 +2976,8 @@ function App() {
       onJoinRoom={() => setScreen('join')}
       onWatchGame={() => {
         clearSession()
+        gameOverRef.current = false
+        setSpectatorGameOver(false)
         peerToPlayerRef.current = {}
         activePeerByPlayerRef.current = {}
         pendingPeerByPlayerRef.current = {}

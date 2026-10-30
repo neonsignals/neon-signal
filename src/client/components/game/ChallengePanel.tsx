@@ -32,7 +32,9 @@ export function ChallengePanel({
       <p className="challenge-panel-title">⚡ CHALLENGE PHASE</p>
       <p className="challenge-panel-subtitle">
         {secondsLeft}s ·{' '}
-        {myChallenge ? 'You have challenged' : 'Tap one rival to accuse'}
+        {myChallenge
+          ? 'You have made your one challenge'
+          : 'Choose one player who left no clue, or skip'}
       </p>
 
       <ul className="challenge-panel-list">
@@ -72,7 +74,7 @@ export function ChallengePanel({
                   disabled={locked}
                   onClick={() => onChallenge(r.id)}
                 >
-                  ⚡ Bluff!
+                  ⚡ Challenge
                 </button>
               )}
             </li>
@@ -87,8 +89,8 @@ export function ChallengePanel({
 
       <p className="challenge-panel-hint">
         {myChallenge
-          ? "Waiting for the timer…"
-          : "You can challenge once, or not at all."}
+          ? 'Waiting for the result at the end of the round…'
+          : 'One challenge only: +4 if they left no clue, or −3 if they submitted any clue.'}
       </p>
     </div>
   )
